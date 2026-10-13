@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 use crate::platform::ProcessInfo;
 use crate::tracker::TrackedApp;
 
+mod matching;
+mod validation;
+
+#[cfg(test)]
+mod tests;
+
 /// The built-in registry, embedded at compile time.
 pub const DEFAULT_APPLICATIONS_JSON: &str =
     include_str!("../../../../../packages/shared-types/data/default-applications.json");
@@ -154,8 +160,28 @@ impl Registry {
 
     /// Best match for a process image. Precedence: `path_includes` matcher > exact exe >
     /// wildcard exe; ties → user-defined over built-in, then lower `sort_order`, then id.
-    pub fn match_process(&self, _exe_name: &str, _exe_path: &str) -> MatchOutcome<'_> {
-        todo!("registry.match_process")
+    ///
+    /// Each application is ranked by its most specific matching matcher (specificity:
+    /// `path_includes` = 2, plus 1 for an exe pattern without `*`). If the winner is disabled the
+    /// process is reported as [`MatchOutcome::Disabled`]: it never falls through to a weaker match.
+    pub fn match_process(&self, exe_name: &str, exe_path: &str) -> MatchOutcome<'_> {
+        let process = matching::NormalizedProcess::new(exe_name, exe_path);
+        let best = self
+            .apps
+            .iter()
+            .filter_map(|app| matching::app_specificity(app, &process).map(|rank| (rank, app)))
+            .min_by(|(rank_a, a), (rank_b, b)| {
+                rank_b
+                    .cmp(rank_a)
+                    .then_with(|| a.built_in.cmp(&b.built_in))
+                    .then_with(|| a.sort_order.cmp(&b.sort_order))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        match best {
+            Some((_, app)) if app.enabled => MatchOutcome::Tracked(app),
+            Some((_, app)) => MatchOutcome::Disabled(app),
+            None => MatchOutcome::Unknown,
+        }
     }
 
     /// Convenience for the tracker: `Some` only for [`MatchOutcome::Tracked`].
@@ -172,22 +198,44 @@ impl Registry {
 
 /// Parse the embedded defaults. Panics only if the compiled-in JSON is invalid, which the
 /// registry unit tests rule out.
+///
+/// # Panics
+/// If [`DEFAULT_APPLICATIONS_JSON`] does not parse as a [`DefaultApplicationsFile`].
 pub fn default_applications() -> Vec<DefaultApplication> {
-    todo!("registry::default_applications")
+    match serde_json::from_str::<DefaultApplicationsFile>(DEFAULT_APPLICATIONS_JSON) {
+        Ok(file) => file.applications,
+        // Compile-time data, covered by the unit tests: unreachable in a tested build.
+        Err(err) => panic!("embedded default-applications.json is invalid: {err}"),
+    }
 }
 
 /// Does `matcher` accept this process image? Case-insensitive; `*` matches any run of characters.
-pub fn matcher_matches(_matcher: &ProcessMatcher, _exe_name: &str, _exe_path: &str) -> bool {
-    todo!("registry::matcher_matches")
+///
+/// The pattern is compared with the image **file name** only. When `path_includes` is set, the
+/// full image path must also contain it. Comparison uses Unicode lowercasing on both sides.
+pub fn matcher_matches(matcher: &ProcessMatcher, exe_name: &str, exe_path: &str) -> bool {
+    let process = matching::NormalizedProcess::new(exe_name, exe_path);
+    matching::specificity(matcher, &process).is_some()
 }
 
 /// Validate a matcher with the same rules as `exePatternError` in `@studio-pulse/validation`.
-pub fn validate_matcher(_matcher: &ProcessMatcher) -> Result<(), String> {
-    todo!("registry::validate_matcher")
+///
+/// `exe` (trimmed): 1–260 characters, ends with `.exe`, no `\`, `/` or `:`, at most 4 `*`, and
+/// at least one non-`*` character before `.exe` (so `*.exe` is rejected). `path_includes`, when
+/// present (trimmed): 1–260 characters. Lengths count UTF-16 units, like JavaScript's `length`.
+///
+/// # Errors
+/// A message for people describing the first rule the matcher breaks.
+pub fn validate_matcher(matcher: &ProcessMatcher) -> Result<(), String> {
+    validation::validate_matcher(matcher)
 }
 
 /// Validate a `save_application` payload (display name 1–80 chars trimmed, 1–16 valid matchers,
 /// id pattern `^[a-z0-9][a-z0-9-]{1,63}$` when present).
-pub fn validate_input(_input: &ApplicationInput) -> Result<(), String> {
-    todo!("registry::validate_input")
+///
+/// # Errors
+/// A message for people describing the first problem; matcher errors are prefixed with the
+/// matcher's 1-based position (`Executable 2: …`).
+pub fn validate_input(input: &ApplicationInput) -> Result<(), String> {
+    validation::validate_input(input)
 }
