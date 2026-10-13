@@ -1,0 +1,3 @@
+-- Phase 2: development seed data for the shared workspace (organizations, members, projects).
+-- Intentionally empty in Phase 1. Phase 1 data lives in the desktop app's local SQLite database
+-- (apps/desktop/src-tauri/migrations).

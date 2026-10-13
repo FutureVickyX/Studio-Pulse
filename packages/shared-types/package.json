@@ -1,0 +1,14 @@
+{
+  "name": "@studio-pulse/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Rust⇄UI contract types and the built-in application registry.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./default-applications.json": "./data/default-applications.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

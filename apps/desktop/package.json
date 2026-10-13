@@ -1,0 +1,33 @@
+{
+  "name": "@studio-pulse/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Studio Pulse desktop app (Tauri 2 + React).",
+  "scripts": {
+    "dev:ui": "vite",
+    "build:ui": "vite build",
+    "preview:ui": "vite preview",
+    "typecheck": "tsc -p tsconfig.json",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "icons": "tauri icon ./src-tauri/icons/source/app-icon.svg -o ./src-tauri/icons"
+  },
+  "dependencies": {
+    "@studio-pulse/shared-types": "0.1.0",
+    "@studio-pulse/time-engine": "0.1.0",
+    "@studio-pulse/ui": "0.1.0",
+    "@studio-pulse/validation": "0.1.0",
+    "@tauri-apps/api": "^2.12.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "vite": "^8.3.4"
+  }
+}

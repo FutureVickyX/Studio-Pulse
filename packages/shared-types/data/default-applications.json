@@ -1,0 +1,165 @@
+{
+  "$comment": "Built-in application registry. Single source of truth for Rust (include_str!) and TypeScript. Matchers: `exe` is the process image file name (case-insensitive, `*` wildcard allowed); optional `pathIncludes` is a case-insensitive substring of the full image path used to disambiguate generic names. Users can edit, disable or extend every entry in the app.",
+  "version": 1,
+  "applications": [
+    {
+      "id": "figma",
+      "displayName": "Figma",
+      "category": "design",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Figma.exe" }, { "exe": "Figma Beta.exe" }]
+    },
+    {
+      "id": "adobe-illustrator",
+      "displayName": "Adobe Illustrator",
+      "category": "design",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Illustrator.exe" }]
+    },
+    {
+      "id": "adobe-photoshop",
+      "displayName": "Adobe Photoshop",
+      "category": "design",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Photoshop.exe" }]
+    },
+    {
+      "id": "affinity-designer",
+      "displayName": "Affinity Designer",
+      "category": "design",
+      "enabledByDefault": true,
+      "matchers": [
+        { "exe": "Designer.exe", "pathIncludes": "Affinity" },
+        { "exe": "Affinity Designer*.exe" }
+      ]
+    },
+    {
+      "id": "coreldraw",
+      "displayName": "CorelDRAW",
+      "category": "design",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "CorelDRW.exe" }]
+    },
+    {
+      "id": "inkscape",
+      "displayName": "Inkscape",
+      "category": "design",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "inkscape.exe" }]
+    },
+    {
+      "id": "adobe-after-effects",
+      "displayName": "Adobe After Effects",
+      "category": "motion",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "AfterFX.exe" }, { "exe": "AfterFX*.exe" }]
+    },
+    {
+      "id": "adobe-premiere-pro",
+      "displayName": "Adobe Premiere Pro",
+      "category": "video",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Adobe Premiere Pro.exe" }, { "exe": "Adobe Premiere Pro*.exe" }]
+    },
+    {
+      "id": "davinci-resolve",
+      "displayName": "DaVinci Resolve",
+      "category": "video",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Resolve.exe" }]
+    },
+    {
+      "id": "adobe-media-encoder",
+      "displayName": "Adobe Media Encoder",
+      "category": "video",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Adobe Media Encoder.exe" }, { "exe": "Adobe Media Encoder*.exe" }]
+    },
+    {
+      "id": "blender",
+      "displayName": "Blender",
+      "category": "3d",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "blender.exe" }]
+    },
+    {
+      "id": "cinema-4d",
+      "displayName": "Cinema 4D",
+      "category": "3d",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Cinema 4D.exe" }, { "exe": "Cinema 4D*.exe" }]
+    },
+    {
+      "id": "houdini",
+      "displayName": "Houdini",
+      "category": "3d",
+      "enabledByDefault": true,
+      "matchers": [
+        { "exe": "houdini.exe" },
+        { "exe": "houdinifx.exe" },
+        { "exe": "houdinicore.exe" },
+        { "exe": "happrentice.exe" },
+        { "exe": "hindie.exe" }
+      ]
+    },
+    {
+      "id": "adobe-indesign",
+      "displayName": "Adobe InDesign",
+      "category": "publishing",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "InDesign.exe" }]
+    },
+    {
+      "id": "adobe-audition",
+      "displayName": "Adobe Audition",
+      "category": "audio",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Adobe Audition.exe" }, { "exe": "Adobe Audition*.exe" }]
+    },
+    {
+      "id": "adobe-lightroom",
+      "displayName": "Adobe Lightroom",
+      "category": "photo",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Lightroom.exe" }]
+    },
+    {
+      "id": "adobe-substance-3d-painter",
+      "displayName": "Adobe Substance 3D Painter",
+      "category": "3d",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Adobe Substance 3D Painter.exe" }, { "exe": "Substance Painter.exe" }]
+    },
+    {
+      "id": "krita",
+      "displayName": "Krita",
+      "category": "design",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "krita.exe" }]
+    },
+    {
+      "id": "gimp",
+      "displayName": "GIMP",
+      "category": "photo",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "gimp.exe" }, { "exe": "gimp-*.exe" }]
+    },
+    {
+      "id": "framer",
+      "displayName": "Framer",
+      "category": "design",
+      "enabledByDefault": true,
+      "matchers": [{ "exe": "Framer.exe" }]
+    },
+    {
+      "id": "vscode",
+      "displayName": "Visual Studio Code",
+      "category": "code",
+      "enabledByDefault": false,
+      "matchers": [
+        { "exe": "Code.exe", "pathIncludes": "Microsoft VS Code" },
+        { "exe": "Code - Insiders.exe" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@studio-pulse/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 2: typed Supabase client, generated database types and query helpers. Not implemented in Phase 1.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
