@@ -1,0 +1,16 @@
+{
+  "description": "An 8.5-hour Blender session with steady input, sampled at 1 Hz (30,600 samples, checkpointed every 15 samples). It stays one interval, one row.",
+  "apps": { "blender": "Blender" },
+  "steps": [
+    { "from": 0, "to": 30600000, "app": "blender", "activity": "tracking" },
+    { "at": 30600000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "blender", "kind": "active", "start": 0, "end": 30600000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 30600000, "activeMs": 30600000, "idleMs": 0 },
+    "discarded": 0
+  }
+}

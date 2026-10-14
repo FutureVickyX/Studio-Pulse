@@ -1,0 +1,17 @@
+{
+  "description": "Figma in the foreground with steady input for 10 minutes. One active interval, closed when the user switches to an untracked application.",
+  "apps": { "figma": "Figma" },
+  "steps": [
+    { "from": 0, "to": 600000, "app": "figma", "activity": "tracking" },
+    { "at": 600000, "app": null, "activity": "untracked", "note": "switch to an untracked app" }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "figma", "kind": "active", "start": 0, "end": 600000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 600000, "activeMs": 600000, "idleMs": 0 },
+    "activity": "untracked",
+    "discarded": 0
+  }
+}

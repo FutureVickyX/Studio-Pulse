@@ -1,0 +1,20 @@
+{
+  "description": "Graceful quit and relaunch: finish(shutdown) closes Figma at the last sample (4:59); a new engine reads the high-water mark from the store. The relaunched tracker's first samples are 2 s behind it (clock corrected during the reboot): clockBehind until 4:59, then a new interval with a new id starts exactly there.",
+  "apps": { "figma": "Figma" },
+  "steps": [
+    { "from": 0, "to": 300000, "app": "figma" },
+    { "op": "restart", "activity": "starting", "note": "finish(shutdown) + new Engine(highWater = store high-water)" },
+    { "from": 297000, "to": 299000, "app": "figma", "monoOffset": -297000, "activity": "clockBehind", "note": "the new process' monotonic clock starts near 0" },
+    { "from": 299000, "to": 600000, "app": "figma", "activity": "tracking" },
+    { "at": 600000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "figma", "kind": "active", "start": 0, "end": 299000, "reason": "shutdown" },
+      { "id": "s2-iv-1", "app": "figma", "kind": "active", "start": 299000, "end": 600000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 600000, "activeMs": 600000, "idleMs": 0 },
+    "discarded": 0
+  }
+}

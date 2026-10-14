@@ -1,0 +1,18 @@
+{
+  "description": "Restart: a new engine is created with the high-water mark of a previous session (it ended at 0:00). After the reboot the wall clock is 3 s behind it, so the engine holds in clockBehind and opens nothing until the wall clock reaches the mark; the new interval starts exactly at it.",
+  "apps": { "figma": "Figma" },
+  "highWater": 0,
+  "steps": [
+    { "from": -3000, "to": 0, "app": "figma", "monoOffset": 3000, "activity": "clockBehind" },
+    { "from": 0, "to": 300000, "app": "figma", "activity": "tracking" },
+    { "at": 300000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "figma", "kind": "active", "start": 0, "end": 300000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 300000, "activeMs": 300000, "idleMs": 0 },
+    "discarded": 0
+  }
+}

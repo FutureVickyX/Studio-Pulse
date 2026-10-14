@@ -1,0 +1,23 @@
+{
+  "description": "Pins the documented known limitation (architecture section 4.3): the user's last input in Figma is at 10:00. At 12:00, before the 5-minute threshold is reached, Blender steals focus. Retroactive idle relabelling only reaches back within the open interval, so Figma's interval closes at 12:00 as active (2 minutes of idleness credited as active, bounded by one threshold). Blender opens active at 12:00 and is relabelled idle in place at 15:00, because idleness began before it opened. Input at 20:00 starts a new active interval.",
+  "apps": { "figma": "Figma", "blender": "Blender" },
+  "steps": [
+    { "from": 0, "to": 600000, "app": "figma" },
+    { "from": 600000, "to": 720000, "app": "figma", "lastInputAt": 600000, "activity": "tracking", "note": "below the threshold" },
+    { "from": 720000, "to": 900000, "app": "blender", "lastInputAt": 600000, "activity": "tracking", "note": "Blender steals focus at 12:00" },
+    { "from": 900000, "to": 1200000, "app": "blender", "lastInputAt": 600000, "activity": "idle", "note": "15:00: Blender's interval relabelled idle" },
+    { "from": 1200000, "to": 1260000, "app": "blender", "activity": "tracking" },
+    { "at": 1260000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "figma", "kind": "active", "start": 0, "end": 720000, "reason": "appSwitch" },
+      { "id": "iv-2", "app": "blender", "kind": "idle", "start": 720000, "end": 1200000, "reason": "inputResumed" },
+      { "id": "iv-3", "app": "blender", "kind": "active", "start": 1200000, "end": 1260000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 1260000, "activeMs": 780000, "idleMs": 480000 },
+    "activity": "untracked",
+    "discarded": 0
+  }
+}
