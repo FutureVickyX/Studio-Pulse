@@ -245,9 +245,15 @@ fn a_database_from_a_newer_app_is_refused_untouched() {
     let path = db_path(&dir);
     drop(Store::open(&path).unwrap());
     let future = supported_version() + 1;
-    raw(&path)
-        .pragma_update(None, "user_version", future)
-        .unwrap();
+    {
+        let conn = raw(&path);
+        conn.pragma_update(None, "user_version", future).unwrap();
+        // A rollback-journal file shows whether opening changed its (persistent) journal mode.
+        let mode: String = conn
+            .pragma_update_and_check(None, "journal_mode", "DELETE", |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode, "delete");
+    }
 
     match Store::open(&path) {
         Err(StoreError::UnsupportedSchema { found, supported }) => {
@@ -257,10 +263,15 @@ fn a_database_from_a_newer_app_is_refused_untouched() {
         Err(other) => panic!("expected UnsupportedSchema, got {other:?}"),
         Ok(_) => panic!("expected UnsupportedSchema, got a store"),
     }
-    let version: i64 = raw(&path)
+    let conn = raw(&path);
+    let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, future, "the newer database is not modified");
+    assert_eq!(version, future, "the newer database is not migrated");
+    let mode: String = conn
+        .pragma_query_value(None, "journal_mode", |row| row.get(0))
+        .unwrap();
+    assert_eq!(mode, "delete", "not even the journal mode is changed");
 }
 
 #[test]
@@ -575,10 +586,30 @@ fn check_constraints_reject_inconsistent_rows() {
 
 // ---- crash recovery -----------------------------------------------------------------------
 
+/// `path` with `suffix` appended to the file name (`-wal`, `-shm`).
+fn sibling(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// Copy the database file and its WAL as they are on disk right now, while a connection still
+/// has them open: the state a power cut leaves behind (committed transactions SQLite has
+/// written, no checkpoint, no orderly close). The `-shm` index is not copied; SQLite rebuilds
+/// it from the WAL on the next open.
+fn snapshot_files(path: &Path, into: &Path) {
+    for suffix in ["", "-wal"] {
+        // `std::fs::read` opens with full sharing, so SQLite's open handles do not block it.
+        let bytes = std::fs::read(sibling(path, suffix)).unwrap();
+        std::fs::write(sibling(into, suffix), bytes).unwrap();
+    }
+}
+
 #[test]
 fn local_database_recovery_closes_the_open_interval_at_its_last_checkpoint() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
+    let power_cut = dir.path().join("power-cut.sqlite3");
     let checkpoint_end = at(30);
     let device = {
         let store = Store::open(&path).unwrap();
@@ -597,12 +628,26 @@ fn local_database_recovery_closes_the_open_interval_at_its_last_checkpoint() {
             .unwrap();
         open.ended_at_ms = checkpoint_end;
         store.upsert_intervals(&device, &[open]).unwrap();
-        // Simulated crash: no shutdown write, and not even the connection's destructor runs.
-        std::mem::forget(store);
+        assert_eq!(store.list_all_events().unwrap()[1].state, "open");
+
+        // Power cut: only the files survive, and the recent commits live only in the WAL.
+        assert!(std::fs::metadata(sibling(&path, "-wal")).unwrap().len() > 0);
+        snapshot_files(&path, &power_cut);
+        // App crash: the Store goes away without the tracker's shutdown write, so the
+        // interval is still `open` in the database.
+        drop(store);
         device
     };
 
-    let store = Store::open(&path).unwrap();
+    for crashed in [&path, &power_cut] {
+        assert_recovered_at_checkpoint(crashed, &device, checkpoint_end);
+    }
+}
+
+/// Reopen a database left behind by a crash and check that recovery closes the open interval
+/// at its last checkpoint, exactly once.
+fn assert_recovered_at_checkpoint(path: &Path, device: &str, checkpoint_end: i64) {
+    let store = Store::open(path).unwrap();
     assert_eq!(store.device_id().unwrap(), device);
     let report = store.recover_open_intervals(2 * SEC).unwrap();
     assert_eq!(
@@ -630,7 +675,7 @@ fn local_database_recovery_closes_the_open_interval_at_its_last_checkpoint() {
         "closed rows untouched"
     );
     assert_eq!(rows[0].revision, 1);
-    assert_eq!(store.high_water_ms(&device).unwrap(), Some(checkpoint_end));
+    assert_eq!(store.high_water_ms(device).unwrap(), Some(checkpoint_end));
 
     // Recovery is idempotent, and a late replay of the open snapshot cannot reopen the row.
     assert_eq!(
@@ -638,7 +683,7 @@ fn local_database_recovery_closes_the_open_interval_at_its_last_checkpoint() {
         RecoveryReport::default()
     );
     let late = open_iv("iv-1", "figma", Active, at(0), at(99));
-    store.upsert_intervals(&device, &[late]).unwrap();
+    store.upsert_intervals(device, &[late]).unwrap();
     assert_eq!(store.list_all_events().unwrap(), rows);
 
     // Tracking resumes with a new open interval after the high-water mark.
@@ -649,7 +694,7 @@ fn local_database_recovery_closes_the_open_interval_at_its_last_checkpoint() {
         checkpoint_end + SEC,
         checkpoint_end + 5 * SEC,
     );
-    store.upsert_intervals(&device, &[resumed]).unwrap();
+    store.upsert_intervals(device, &[resumed]).unwrap();
     assert_eq!(store.list_all_events().unwrap().len(), 3);
 }
 

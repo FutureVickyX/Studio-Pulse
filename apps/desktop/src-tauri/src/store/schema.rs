@@ -12,8 +12,13 @@ const WAL_RETRY_DELAY_MS: u64 = 50;
 const WAL_ATTEMPTS: u64 = BUSY_TIMEOUT_MS / WAL_RETRY_DELAY_MS;
 
 /// Per-connection settings. `file_backed` enables WAL (meaningless for `:memory:`).
+///
+/// A database written by a newer app is refused here, before anything persistent changes:
+/// `journal_mode` is stored in the file, so switching it would modify a file this build must
+/// leave alone.
 pub(super) fn configure(conn: &Connection, file_backed: bool) -> StoreResult<()> {
     conn.busy_timeout(Duration::from_millis(BUSY_TIMEOUT_MS))?;
+    checked_version(user_version(conn)?, to_i64(MIGRATIONS.len()))?;
     if file_backed {
         enable_wal(conn)?;
     }
@@ -121,6 +126,16 @@ mod tests {
         assert_eq!(user_version(&conn).unwrap(), to_i64(MIGRATIONS.len()));
         migrate(&mut conn).unwrap();
         assert_eq!(user_version(&conn).unwrap(), to_i64(MIGRATIONS.len()));
+    }
+
+    #[test]
+    fn configure_refuses_a_newer_database() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "user_version", 42).unwrap();
+        assert!(matches!(
+            configure(&conn, false),
+            Err(StoreError::UnsupportedSchema { found: 42, .. })
+        ));
     }
 
     #[test]

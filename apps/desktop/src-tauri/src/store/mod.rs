@@ -497,11 +497,8 @@ mod tests {
         assert!(result.is_err());
         let count: i64 = store
             .with_conn(|conn| {
-                Ok(
-                    conn.query_row("SELECT COUNT(*) FROM meta WHERE key = 'a'", [], |r| {
-                        r.get(0)
-                    })?,
-                )
+                let sql = "SELECT COUNT(*) FROM meta WHERE key = 'a'";
+                Ok(conn.query_row(sql, [], |r| r.get(0))?)
             })
             .unwrap();
         assert_eq!(count, 0);
