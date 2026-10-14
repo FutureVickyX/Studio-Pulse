@@ -1,0 +1,17 @@
+{
+  "description": "pauseWhenIdle is off (idle detection disabled): the user watches a 30-minute render in Blender without touching the input devices. All foreground time counts as active.",
+  "apps": { "blender": "Blender" },
+  "config": { "idleDetection": false },
+  "steps": [
+    { "from": 0, "to": 1800000, "app": "blender", "lastInputAt": 0, "activity": "tracking", "note": "no input for 30 minutes" },
+    { "at": 1800000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "blender", "kind": "active", "start": 0, "end": 1800000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 1800000, "activeMs": 1800000, "idleMs": 0 },
+    "discarded": 0
+  }
+}

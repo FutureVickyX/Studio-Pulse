@@ -1,0 +1,18 @@
+{
+  "description": "Tracking starts while the user has already been away for 10 minutes with After Effects in the foreground. The first interval opens as idle at the first sample (never retroactively before it); input two minutes later starts an active interval.",
+  "apps": { "after-effects": "Adobe After Effects" },
+  "steps": [
+    { "from": 0, "to": 120000, "app": "after-effects", "lastInputAt": -600000, "activity": "idle" },
+    { "from": 120000, "to": 300000, "app": "after-effects", "activity": "tracking" },
+    { "at": 300000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "after-effects", "kind": "idle", "start": 0, "end": 120000, "reason": "inputResumed" },
+      { "id": "iv-2", "app": "after-effects", "kind": "active", "start": 120000, "end": 300000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 300000, "activeMs": 180000, "idleMs": 120000 },
+    "discarded": 0
+  }
+}

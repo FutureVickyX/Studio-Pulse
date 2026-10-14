@@ -1,0 +1,19 @@
+{
+  "description": "The user locks the screen for 5 minutes with Figma still the foreground window. The interval closes at the first locked sample (session away), nothing is recorded while locked, and a new interval opens at unlock.",
+  "apps": { "figma": "Figma" },
+  "steps": [
+    { "from": 0, "to": 600000, "app": "figma" },
+    { "from": 600000, "to": 900000, "app": "figma", "session": "locked", "lastInputAt": 600000, "activity": "away" },
+    { "from": 900000, "to": 1200000, "app": "figma", "activity": "tracking", "note": "unlocked" },
+    { "at": 1200000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "figma", "kind": "active", "start": 0, "end": 600000, "reason": "sessionAway" },
+      { "id": "iv-2", "app": "figma", "kind": "active", "start": 900000, "end": 1200000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 900000, "activeMs": 900000, "idleMs": 0 },
+    "discarded": 0
+  }
+}

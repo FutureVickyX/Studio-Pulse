@@ -1,0 +1,19 @@
+{
+  "description": "The wall clock is set back 10 minutes at 20:00 while the monotonic clock keeps ticking. The interval closes at the last sample before the change (clock change). Tracking then holds in clockBehind until the wall clock reaches the high-water mark again (19:59), and resumes exactly there: no overlap with the earlier interval.",
+  "apps": { "figma": "Figma" },
+  "steps": [
+    { "from": 0, "to": 1200000, "app": "figma" },
+    { "from": 600000, "to": 1199000, "app": "figma", "monoOffset": 600000, "activity": "clockBehind", "note": "wall -599 s, monotonic +1 s" },
+    { "from": 1199000, "to": 1500000, "app": "figma", "activity": "tracking", "note": "the wall clock reaches the high-water mark" },
+    { "at": 1500000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-1", "app": "figma", "kind": "active", "start": 0, "end": 1199000, "reason": "clockChange" },
+      { "id": "iv-2", "app": "figma", "kind": "active", "start": 1199000, "end": 1500000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 1500000, "activeMs": 1500000, "idleMs": 0 },
+    "discarded": 0
+  }
+}

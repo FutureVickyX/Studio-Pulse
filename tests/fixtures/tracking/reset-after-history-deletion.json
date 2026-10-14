@@ -1,0 +1,19 @@
+{
+  "description": "The user deletes all tracking history at 15:00 while Photoshop is being recorded. Every row is deleted, the engine is reset with no high-water mark and drops its open interval (its checkpointed row is deleted too). The next sample starts a fresh interval with a new id.",
+  "apps": { "figma": "Figma", "photoshop": "Adobe Photoshop" },
+  "steps": [
+    { "from": 0, "to": 600000, "app": "figma" },
+    { "from": 600000, "to": 900000, "app": "photoshop" },
+    { "op": "reset", "activity": "starting", "note": "delete all history" },
+    { "from": 900000, "to": 1200000, "app": "photoshop", "activity": "tracking" },
+    { "at": 1200000, "app": null }
+  ],
+  "expect": {
+    "closed": [
+      { "id": "iv-3", "app": "photoshop", "kind": "active", "start": 900000, "end": 1200000, "reason": "untracked" }
+    ],
+    "open": null,
+    "totals": { "foregroundMs": 300000, "activeMs": 300000, "idleMs": 0 },
+    "discarded": 0
+  }
+}
