@@ -120,7 +120,9 @@ fn check_range(name: &str, value: u32, (min, max): (u32, u32)) -> Result<(), Str
     if (min..=max).contains(&value) {
         Ok(())
     } else {
-        Err(format!("{name} must be between {min} and {max} (got {value})"))
+        Err(format!(
+            "{name} must be between {min} and {max} (got {value})"
+        ))
     }
 }
 
@@ -128,8 +130,16 @@ impl Settings {
     /// Range-check every numeric field.
     pub fn validate(&self) -> Result<(), String> {
         let t = &self.tracking;
-        check_range("idleTimeoutMinutes", t.idle_timeout_minutes, IDLE_TIMEOUT_MINUTES)?;
-        check_range("checkpointSeconds", t.checkpoint_seconds, CHECKPOINT_SECONDS)?;
+        check_range(
+            "idleTimeoutMinutes",
+            t.idle_timeout_minutes,
+            IDLE_TIMEOUT_MINUTES,
+        )?;
+        check_range(
+            "checkpointSeconds",
+            t.checkpoint_seconds,
+            CHECKPOINT_SECONDS,
+        )?;
         check_range(
             "minimumIntervalSeconds",
             t.minimum_interval_seconds,

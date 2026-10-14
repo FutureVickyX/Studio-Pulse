@@ -440,7 +440,8 @@ mod tests {
 
     fn pragma_i64(store: &Store, name: &str) -> i64 {
         let conn = store.lock().unwrap();
-        conn.pragma_query_value(None, name, |row| row.get(0)).unwrap()
+        conn.pragma_query_value(None, name, |row| row.get(0))
+            .unwrap()
     }
 
     #[test]
@@ -496,9 +497,11 @@ mod tests {
         assert!(result.is_err());
         let count: i64 = store
             .with_conn(|conn| {
-                Ok(conn.query_row("SELECT COUNT(*) FROM meta WHERE key = 'a'", [], |r| {
-                    r.get(0)
-                })?)
+                Ok(
+                    conn.query_row("SELECT COUNT(*) FROM meta WHERE key = 'a'", [], |r| {
+                        r.get(0)
+                    })?,
+                )
             })
             .unwrap();
         assert_eq!(count, 0);
@@ -524,9 +527,18 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        assert!(matches!(store.list_all_events(), Err(StoreError::Sqlite(_))));
-        assert!(matches!(store.list_events(0, 10), Err(StoreError::Sqlite(_))));
-        assert!(matches!(store.list_applications(), Err(StoreError::Sqlite(_))));
+        assert!(matches!(
+            store.list_all_events(),
+            Err(StoreError::Sqlite(_))
+        ));
+        assert!(matches!(
+            store.list_events(0, 10),
+            Err(StoreError::Sqlite(_))
+        ));
+        assert!(matches!(
+            store.list_applications(),
+            Err(StoreError::Sqlite(_))
+        ));
     }
 
     #[test]

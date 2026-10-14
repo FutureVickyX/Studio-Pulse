@@ -85,7 +85,9 @@ impl EndReason {
     }
 
     pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|reason| reason.as_str() == value)
+        Self::ALL
+            .into_iter()
+            .find(|reason| reason.as_str() == value)
     }
 }
 

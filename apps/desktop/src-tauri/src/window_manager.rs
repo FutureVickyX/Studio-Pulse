@@ -207,10 +207,8 @@ pub fn handle_main_window_event<R: Runtime>(window: &tauri::Window<R>, event: &W
                 window.app_handle().exit(0);
             }
         }
-        WindowEvent::Resized(_) => {
-            if minimize_to_tray && window.is_minimized().unwrap_or(false) {
-                let _ = window.hide();
-            }
+        WindowEvent::Resized(_) if minimize_to_tray && window.is_minimized().unwrap_or(false) => {
+            let _ = window.hide();
         }
         _ => {}
     }
@@ -230,18 +228,33 @@ mod tests {
 
     #[test]
     fn manual_launch_always_opens_main_window() {
-        assert_eq!(startup_view(&settings(true, true, false), false), StartupView::Main);
+        assert_eq!(
+            startup_view(&settings(true, true, false), false),
+            StartupView::Main
+        );
     }
 
     #[test]
     fn onboarding_always_opens_main_window() {
-        assert_eq!(startup_view(&settings(false, true, false), true), StartupView::Main);
+        assert_eq!(
+            startup_view(&settings(false, true, false), true),
+            StartupView::Main
+        );
     }
 
     #[test]
     fn login_launch_respects_start_minimized_and_full_window() {
-        assert_eq!(startup_view(&settings(true, true, true), true), StartupView::TrayOnly);
-        assert_eq!(startup_view(&settings(true, false, true), true), StartupView::Main);
-        assert_eq!(startup_view(&settings(true, false, false), true), StartupView::Indicator);
+        assert_eq!(
+            startup_view(&settings(true, true, true), true),
+            StartupView::TrayOnly
+        );
+        assert_eq!(
+            startup_view(&settings(true, false, true), true),
+            StartupView::Main
+        );
+        assert_eq!(
+            startup_view(&settings(true, false, false), true),
+            StartupView::Indicator
+        );
     }
 }

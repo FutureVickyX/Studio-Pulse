@@ -133,7 +133,11 @@ mod tests {
         ));
         assert_eq!(user_version(&conn).unwrap(), 42);
         let tables: i64 = conn
-            .query_row("SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(tables, 0, "nothing was created");
 
@@ -145,7 +149,8 @@ mod tests {
     fn a_failing_migration_leaves_the_version_unchanged() {
         let mut conn = fresh();
         // Occupy a name the migration creates so it fails halfway through.
-        conn.execute_batch("CREATE TABLE tracking_events (x INTEGER)").unwrap();
+        conn.execute_batch("CREATE TABLE tracking_events (x INTEGER)")
+            .unwrap();
         assert!(migrate(&mut conn).is_err());
         assert_eq!(user_version(&conn).unwrap(), 0);
         let meta_exists: i64 = conn

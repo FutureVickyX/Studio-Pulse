@@ -172,11 +172,7 @@ fn command_executable(command: &str) -> Option<&str> {
     let mut from = 0;
     while let Some(found) = lower[from..].find(".exe") {
         let end = from + found + ".exe".len();
-        if lower[end..]
-            .chars()
-            .next()
-            .map_or(true, char::is_whitespace)
-        {
+        if lower[end..].chars().next().is_none_or(char::is_whitespace) {
             return Some(&command[..end]);
         }
         from = end;

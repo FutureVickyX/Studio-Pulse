@@ -286,9 +286,9 @@ fn spawned_gui_process_is_resolved_and_listed() {
     // After it exits the pid can no longer be resolved to charmap.
     let after = process_info(pid);
     assert!(
-        after.as_ref().map_or(true, |info| !info
-            .exe_name
-            .eq_ignore_ascii_case("charmap.exe")),
+        after
+            .as_ref()
+            .is_none_or(|info| !info.exe_name.eq_ignore_ascii_case("charmap.exe")),
         "{after:?}"
     );
 }

@@ -120,10 +120,14 @@ pub enum TrackerCommand {
         until_ms: Option<EpochMs>,
         reply: Sender<()>,
     },
-    Resume { reply: Sender<()> },
+    Resume {
+        reply: Sender<()>,
+    },
     /// Settings changed: re-read them and reconfigure the engine. Handles enable/disable and
     /// onboarding completion.
-    SettingsChanged { reply: Sender<()> },
+    SettingsChanged {
+        reply: Sender<()>,
+    },
     /// Registry changed: matching changes take effect on the next sample; status is refreshed.
     RegistryChanged,
     /// Delete local history inside the tracker thread so a concurrent checkpoint can't re-insert
@@ -133,9 +137,13 @@ pub enum TrackerCommand {
         reply: Sender<Result<u64, String>>,
     },
     /// Persist the open interval and any buffered writes now.
-    Flush { reply: Sender<()> },
+    Flush {
+        reply: Sender<()>,
+    },
     /// Close the open interval (`Shutdown`), persist, stop the thread.
-    Shutdown { reply: Sender<()> },
+    Shutdown {
+        reply: Sender<()>,
+    },
 }
 
 /// Callbacks into the app shell (emit Tauri events, update the tray, notify).
@@ -172,7 +180,9 @@ enum Mode {
     NotStarted,
     /// `tracking.enabled = false`.
     Disabled,
-    Paused { until_ms: Option<EpochMs> },
+    Paused {
+        until_ms: Option<EpochMs>,
+    },
     Running,
 }
 
@@ -390,7 +400,11 @@ impl TrackerCore {
     fn flush_pending(&mut self) -> bool {
         let mut wrote = false;
         if !self.pending_discards.is_empty() {
-            match self.deps.store.discard_open_intervals(&self.pending_discards) {
+            match self
+                .deps
+                .store
+                .discard_open_intervals(&self.pending_discards)
+            {
                 Ok(_) => {
                     self.pending_discards.clear();
                     wrote = true;

@@ -160,7 +160,9 @@ pub fn update(app: &AppHandle, status: &TrackerStatus) {
             return;
         };
         let text = describe(&status);
-        let _ = tray.tray.set_tooltip(Some(format!("Studio Pulse — {text}")));
+        let _ = tray
+            .tray
+            .set_tooltip(Some(format!("Studio Pulse — {text}")));
         let _ = tray.status.set_text(&text);
         match Image::from_bytes(icon_for(status.state)) {
             Ok(icon) => {

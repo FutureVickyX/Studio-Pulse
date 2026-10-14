@@ -83,7 +83,9 @@ pub(super) fn upsert(
 /// message instead of an anonymous CHECK failure.
 fn check_interval(interval: &Interval) -> StoreResult<()> {
     if interval.id.is_empty() {
-        return Err(StoreError::Invalid("an interval has an empty id".to_owned()));
+        return Err(StoreError::Invalid(
+            "an interval has an empty id".to_owned(),
+        ));
     }
     if interval.ended_at_ms < interval.started_at_ms {
         return Err(StoreError::Invalid(format!(

@@ -64,9 +64,10 @@ impl TrackerObserver for ShellObserver {
 
     fn events_changed(&self) {
         let at = store::iso_from_ms(chrono::Utc::now().timestamp_millis());
-        let _ = self
-            .app
-            .emit(commands::EVENT_EVENTS_CHANGED, serde_json::json!({ "at": at }));
+        let _ = self.app.emit(
+            commands::EVENT_EVENTS_CHANGED,
+            serde_json::json!({ "at": at }),
+        );
     }
 
     fn auto_resumed(&self) {
@@ -227,7 +228,9 @@ pub fn run() {
     app.run(|app, event| match event {
         // Windows are hidden, not closed, when minimizing to tray. If every window does close,
         // keep running in the tray; explicit quits (`app.exit`) carry an exit code and proceed.
-        RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
+        RunEvent::ExitRequested {
+            code: None, api, ..
+        } => api.prevent_exit(),
         RunEvent::Exit => shutdown_tracker(app),
         _ => {}
     });

@@ -123,10 +123,14 @@ pub fn list_tracking_events(
     range: TimeRangeInput,
 ) -> CommandResult<Vec<TrackingEventRecord>> {
     if range.to_ms <= range.from_ms {
-        return Err(CommandError::validation("The range end must be after its start."));
+        return Err(CommandError::validation(
+            "The range end must be after its start.",
+        ));
     }
     if range.to_ms - range.from_ms > MAX_RANGE_MS {
-        return Err(CommandError::validation("The range is too long (maximum 400 days)."));
+        return Err(CommandError::validation(
+            "The range is too long (maximum 400 days).",
+        ));
     }
     let mut records = state.store.list_events(range.from_ms, range.to_ms)?;
     if let Some(open) = state.tracker.open_interval() {
@@ -473,7 +477,9 @@ pub fn delete_tracking_events(
 ) -> CommandResult<DeleteResult> {
     if let Some(before) = before_ms {
         if before > now_ms() {
-            return Err(CommandError::validation("The cut-off can't be in the future."));
+            return Err(CommandError::validation(
+                "The cut-off can't be in the future.",
+            ));
         }
     }
     let result = state

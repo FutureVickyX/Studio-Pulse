@@ -107,7 +107,9 @@ pub(super) fn list(conn: &Connection) -> StoreResult<Vec<ApplicationDefinition>>
 /// One application by id.
 fn get(conn: &Connection, id: &str) -> StoreResult<Option<ApplicationDefinition>> {
     let sql = format!("{SELECT_APPLICATION} WHERE id = ?1");
-    Ok(conn.query_row(&sql, params![id], map_application).optional()?)
+    Ok(conn
+        .query_row(&sql, params![id], map_application)
+        .optional()?)
 }
 
 /// Create (`id: None`) or update (`id: Some`) an application. The input is already validated.
@@ -215,7 +217,9 @@ pub(super) fn set_enabled(tx: &Transaction<'_>, ids: &[String], now: EpochMs) ->
         rows.collect::<Result<_, _>>()?
     };
     if let Some(unknown) = ids.iter().find(|id| !known.contains(id.as_str())) {
-        return Err(StoreError::Invalid(format!("unknown application id: {unknown}")));
+        return Err(StoreError::Invalid(format!(
+            "unknown application id: {unknown}"
+        )));
     }
     let wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
     let mut stmt = tx.prepare_cached(

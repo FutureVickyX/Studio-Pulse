@@ -20,7 +20,7 @@
     "test:ts:watch": "vitest",
     "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test:windows-live": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test windows_live -- --ignored --test-threads=1",
-    "probe": "cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml --example probe",
+    "probe": "cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml --example probe --",
     "lint:rust": "cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings",
     "fmt:rust": "cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml"
   },

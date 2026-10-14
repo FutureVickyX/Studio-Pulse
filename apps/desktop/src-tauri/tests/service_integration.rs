@@ -359,7 +359,10 @@ fn sleep_is_never_credited() {
     assert_eq!(rows[0].ended_at_ms, before_sleep);
     assert_eq!(reason(&rows[0]), Some(EndReason::TimeGap));
     let credited: i64 = rows.iter().map(|r| r.ended_at_ms - r.started_at_ms).sum();
-    assert!(credited <= 61_000, "credited {credited} ms across a 10-minute sleep");
+    assert!(
+        credited <= 61_000,
+        "credited {credited} ms across a 10-minute sleep"
+    );
     assert_no_overlaps(&rows);
 }
 
@@ -369,10 +372,7 @@ fn disabling_an_application_mid_session_closes_its_interval() {
     h.world.focus("Photoshop.exe");
     h.run_seconds(10, true);
     let mut apps = h.store.list_applications().unwrap();
-    let photoshop = apps
-        .iter_mut()
-        .find(|a| a.id == "adobe-photoshop")
-        .unwrap();
+    let photoshop = apps.iter_mut().find(|a| a.id == "adobe-photoshop").unwrap();
     photoshop.enabled = false;
     *h.registry.write().unwrap() = Registry::new(apps);
     h.core.handle(TrackerCommand::RegistryChanged);
@@ -407,13 +407,20 @@ fn crash_and_restart_do_not_duplicate_intervals() {
     assert_eq!(recovered.len(), 1);
     assert_eq!(reason(&recovered[0]), Some(EndReason::Recovered));
     let recovered_end = recovered[0].ended_at_ms;
-    assert!(recovered_end <= world.wall(), "never past the last observation");
+    assert!(
+        recovered_end <= world.wall(),
+        "never past the last observation"
+    );
 
     let mut h = harness_with(store, world, onboarded_settings());
     h.run_seconds(30, true);
     h.send(|reply| TrackerCommand::Shutdown { reply });
     let rows = h.rows();
-    assert_eq!(rows.len(), 2, "the recovered interval plus one new interval");
+    assert_eq!(
+        rows.len(),
+        2,
+        "the recovered interval plus one new interval"
+    );
     assert!(rows[1].started_at_ms >= recovered_end);
     assert_ne!(rows[0].id, rows[1].id);
     assert_no_overlaps(&rows);
