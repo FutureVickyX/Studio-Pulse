@@ -27,3 +27,4 @@ npm-debug.log*
 
 # local tooling
 .claude/worktrees/
+.claude/*.js
