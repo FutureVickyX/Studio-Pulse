@@ -63,6 +63,27 @@ pub fn running_applications() -> Vec<ProcessInfo> {
     }
 }
 
+/// Image name and path of the process `pid`, or `None` if it has exited, is protected, or runs
+/// elevated while we do not. Reads only the image path; never window titles or process memory.
+pub fn process_info(pid: u32) -> Option<ProcessInfo> {
+    #[cfg(windows)]
+    {
+        win32::process_info(pid)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+/// The file-name component of an image path (`C:\Apps\Figma.exe` → `Figma.exe`). Accepts both
+/// `\` and `/` separators so it behaves the same on every OS; returns the whole input when it
+/// contains no separator.
+pub fn exe_name_from_path(path: &str) -> &str {
+    path.rsplit(['\\', '/']).next().unwrap_or(path)
+}
+
 /// Stand-in for non-Windows builds so the pure modules and their tests compile anywhere.
 /// Studio Pulse does not claim tracking support on other platforms.
 #[cfg(not(windows))]
@@ -80,5 +101,22 @@ impl SystemProbe for UnsupportedProbe {
 
     fn session_state(&mut self) -> SessionState {
         SessionState::Unknown
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exe_name_is_the_last_path_component() {
+        assert_eq!(
+            exe_name_from_path(r"C:\Program Files\Adobe\Photoshop.exe"),
+            "Photoshop.exe"
+        );
+        assert_eq!(exe_name_from_path("C:/tools/blender.exe"), "blender.exe");
+        assert_eq!(exe_name_from_path("Figma.exe"), "Figma.exe");
+        assert_eq!(exe_name_from_path(r"\\?\C:\a\b c\Code.exe"), "Code.exe");
+        assert_eq!(exe_name_from_path(""), "");
     }
 }
