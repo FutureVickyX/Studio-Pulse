@@ -29,9 +29,11 @@ pub(super) fn device_id(conn: &Connection) -> StoreResult<String> {
 
 fn read_meta(conn: &Connection, key: &str) -> StoreResult<Option<String>> {
     Ok(conn
-        .query_row("SELECT value FROM meta WHERE key = ?1", params![key], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT value FROM meta WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
         .optional()?)
 }
 

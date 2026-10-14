@@ -15,8 +15,8 @@ use studio_pulse_lib::registry::{
 };
 use studio_pulse_lib::settings::{Settings, ThemePreference};
 use studio_pulse_lib::store::{
-    export_csv, export_json, iso_from_ms, record_from_interval, RecoveryReport, Store,
-    StoreError, TrackingEventRecord, EXPORT_FORMAT, MIGRATIONS, STORED_TRACKING_FIELDS,
+    export_csv, export_json, iso_from_ms, record_from_interval, RecoveryReport, Store, StoreError,
+    TrackingEventRecord, EXPORT_FORMAT, MIGRATIONS, STORED_TRACKING_FIELDS,
 };
 use studio_pulse_lib::tracker::IntervalKind::{Active, Idle};
 use studio_pulse_lib::tracker::{EndReason, Interval, IntervalKind};
@@ -44,7 +44,8 @@ fn db_path(dir: &TempDir) -> PathBuf {
 /// A second, raw connection to the same file (for checks the public API does not expose).
 fn raw(path: &Path) -> Connection {
     let conn = Connection::open(path).unwrap();
-    conn.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
     conn
 }
 
@@ -190,7 +191,10 @@ fn parse_csv(text: &str) -> Vec<Vec<String>> {
         }
     }
     assert!(!quoted, "unterminated quoted field");
-    assert!(field.is_empty() && row.is_empty(), "the last line must end with CRLF");
+    assert!(
+        field.is_empty() && row.is_empty(),
+        "the last line must end with CRLF"
+    );
     rows
 }
 
@@ -215,12 +219,19 @@ fn migrations_apply_fresh_and_reopen_idempotently() {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert_eq!(tables, ["applications", "meta", "preferences", "tracking_events"]);
+    assert_eq!(
+        tables,
+        ["applications", "meta", "preferences", "tracking_events"]
+    );
 
     for _ in 0..2 {
         let store = Store::open(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), supported_version());
-        assert_eq!(store.device_id().unwrap(), device, "data survives reopening");
+        assert_eq!(
+            store.device_id().unwrap(),
+            device,
+            "data survives reopening"
+        );
     }
 
     let memory = Store::open_in_memory().unwrap();
@@ -234,7 +245,15 @@ fn a_database_from_a_newer_app_is_refused_untouched() {
     let path = db_path(&dir);
     drop(Store::open(&path).unwrap());
     let future = supported_version() + 1;
-    raw(&path).pragma_update(None, "user_version", future).unwrap();
+    {
+        let conn = raw(&path);
+        conn.pragma_update(None, "user_version", future).unwrap();
+        // A rollback-journal file shows whether opening changed its (persistent) journal mode.
+        let mode: String = conn
+            .pragma_update_and_check(None, "journal_mode", "DELETE", |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode, "delete");
+    }
 
     match Store::open(&path) {
         Err(StoreError::UnsupportedSchema { found, supported }) => {
@@ -244,10 +263,15 @@ fn a_database_from_a_newer_app_is_refused_untouched() {
         Err(other) => panic!("expected UnsupportedSchema, got {other:?}"),
         Ok(_) => panic!("expected UnsupportedSchema, got a store"),
     }
-    let version: i64 = raw(&path)
+    let conn = raw(&path);
+    let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, future, "the newer database is not modified");
+    assert_eq!(version, future, "the newer database is not migrated");
+    let mode: String = conn
+        .pragma_query_value(None, "journal_mode", |row| row.get(0))
+        .unwrap();
+    assert_eq!(mode, "delete", "not even the journal mode is changed");
 }
 
 #[test]
@@ -265,7 +289,11 @@ fn device_id_is_a_uuid_v4_stable_across_reopen() {
     let store = Store::open(&path).unwrap();
     assert_eq!(store.device_id().unwrap(), first, "stable across restarts");
     let rows: i64 = raw(&path)
-        .query_row("SELECT COUNT(*) FROM meta WHERE key = 'device_id'", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM meta WHERE key = 'device_id'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(rows, 1);
 }
@@ -304,7 +332,10 @@ fn file_databases_use_wal() {
     assert_eq!(mode, "wal");
     let mut wal = path.into_os_string();
     wal.push("-wal");
-    assert!(PathBuf::from(wal).exists(), "writes go through the WAL file");
+    assert!(
+        PathBuf::from(wal).exists(),
+        "writes go through the WAL file"
+    );
 }
 
 // ---- tracking invariants ------------------------------------------------------------------
@@ -314,21 +345,37 @@ fn at_most_one_open_interval_per_device_is_enforced_by_the_database() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
     let first = open_iv("iv-a", "figma", Active, at(0), at(15));
-    store.upsert_intervals(&device, slice::from_ref(&first)).unwrap();
+    store
+        .upsert_intervals(&device, slice::from_ref(&first))
+        .unwrap();
 
     let second = open_iv("iv-b", "blender", Active, at(15), at(20));
     let err = store
         .upsert_intervals(&device, slice::from_ref(&second))
         .unwrap_err();
-    assert!(is_constraint_violation(&err), "unique partial index: {err:?}");
+    assert!(
+        is_constraint_violation(&err),
+        "unique partial index: {err:?}"
+    );
 
     // The whole batch is rolled back, including rows that would be valid on their own.
-    let unrelated = closed_iv("iv-z", "figma", Active, at(-60), at(-50), EndReason::AppSwitch);
+    let unrelated = closed_iv(
+        "iv-z",
+        "figma",
+        Active,
+        at(-60),
+        at(-50),
+        EndReason::AppSwitch,
+    );
     assert!(store
         .upsert_intervals(&device, &[unrelated, second.clone()])
         .is_err());
     let rows = store.list_all_events().unwrap();
-    assert_eq!(rows, [record_from_interval(&first, &device)], "the first is intact");
+    assert_eq!(
+        rows,
+        [record_from_interval(&first, &device)],
+        "the first is intact"
+    );
 
     // Another device may have its own open interval.
     store.upsert_intervals("other-device", &[second]).unwrap();
@@ -336,7 +383,9 @@ fn at_most_one_open_interval_per_device_is_enforced_by_the_database() {
     // "Close A, open B" in one batch works whatever order the caller lists them in.
     let third = open_iv("iv-c", "blender", Active, at(15), at(16));
     let first_closed = close(&first, at(15), EndReason::AppSwitch);
-    store.upsert_intervals(&device, &[third, first_closed]).unwrap();
+    store
+        .upsert_intervals(&device, &[third, first_closed])
+        .unwrap();
     let rows = store.list_all_events().unwrap();
     assert_eq!(ids(&rows), ["iv-a", "iv-b", "iv-c"]);
     assert_eq!(rows[0].state, "closed");
@@ -350,8 +399,12 @@ fn upserting_the_same_closed_interval_twice_is_idempotent() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
     let interval = closed_iv("iv-1", "figma", Active, at(0), at(90), EndReason::AppSwitch);
-    store.upsert_intervals(&device, slice::from_ref(&interval)).unwrap();
-    store.upsert_intervals(&device, slice::from_ref(&interval)).unwrap();
+    store
+        .upsert_intervals(&device, slice::from_ref(&interval))
+        .unwrap();
+    store
+        .upsert_intervals(&device, slice::from_ref(&interval))
+        .unwrap();
     store
         .upsert_intervals(&device, &[interval.clone(), interval.clone()])
         .unwrap();
@@ -367,7 +420,9 @@ fn checkpoints_bump_the_revision_and_closed_rows_are_immutable() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
     let opened = open_iv("iv-1", "figma", Active, at(0), at(15));
-    store.upsert_intervals(&device, slice::from_ref(&opened)).unwrap();
+    store
+        .upsert_intervals(&device, slice::from_ref(&opened))
+        .unwrap();
     assert_eq!(store.list_all_events().unwrap()[0].revision, 1);
 
     let checkpoint = Interval {
@@ -384,7 +439,9 @@ fn checkpoints_bump_the_revision_and_closed_rows_are_immutable() {
     assert_eq!(row.state, "open");
 
     let closed = close(&checkpoint, at(40), EndReason::AppSwitch);
-    store.upsert_intervals(&device, slice::from_ref(&closed)).unwrap();
+    store
+        .upsert_intervals(&device, slice::from_ref(&closed))
+        .unwrap();
     let after_close = store.list_all_events().unwrap();
     assert_eq!(after_close.len(), 1);
     assert_eq!(after_close[0].revision, 3);
@@ -398,12 +455,18 @@ fn checkpoints_bump_the_revision_and_closed_rows_are_immutable() {
     for replay in replays.clone() {
         store.upsert_intervals(&device, &[replay]).unwrap();
     }
-    assert_eq!(store.list_all_events().unwrap(), after_close, "nothing changed");
+    assert_eq!(
+        store.list_all_events().unwrap(),
+        after_close,
+        "nothing changed"
+    );
 
     // Still no-ops (not constraint errors) while the device has another interval open: the
     // id conflict is resolved before the one-open-per-device index is consulted.
     let next = open_iv("iv-2", "blender", Active, at(40), at(45));
-    store.upsert_intervals(&device, slice::from_ref(&next)).unwrap();
+    store
+        .upsert_intervals(&device, slice::from_ref(&next))
+        .unwrap();
     for replay in replays {
         store.upsert_intervals(&device, &[replay]).unwrap();
     }
@@ -417,7 +480,9 @@ fn an_open_interval_can_be_relabelled_idle_until_it_closes() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
     let active = open_iv("iv-1", "blender", Active, at(0), at(15));
-    store.upsert_intervals(&device, slice::from_ref(&active)).unwrap();
+    store
+        .upsert_intervals(&device, slice::from_ref(&active))
+        .unwrap();
     let idle = Interval {
         kind: Idle,
         ended_at_ms: at(20),
@@ -437,7 +502,14 @@ fn inconsistent_intervals_are_rejected_before_anything_is_written() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
     let good = closed_iv("iv-ok", "figma", Active, at(0), at(5), EndReason::AppSwitch);
-    let backwards = closed_iv("iv-bad", "figma", Active, at(5), at(0), EndReason::AppSwitch);
+    let backwards = closed_iv(
+        "iv-bad",
+        "figma",
+        Active,
+        at(5),
+        at(0),
+        EndReason::AppSwitch,
+    );
     let open_with_reason = Interval {
         end_reason: Some(EndReason::Paused),
         ..open_iv("iv-bad2", "figma", Active, at(0), at(5))
@@ -464,7 +536,16 @@ fn check_constraints_reject_inconsistent_rows() {
     let _store = Store::open(&path).unwrap();
     let conn = raw(&path);
     // (id, kind, start, end, active_ms, idle_ms, state, end_reason)
-    type Row<'a> = (&'a str, &'a str, i64, i64, i64, i64, &'a str, Option<&'a str>);
+    type Row<'a> = (
+        &'a str,
+        &'a str,
+        i64,
+        i64,
+        i64,
+        i64,
+        &'a str,
+        Option<&'a str>,
+    );
     let insert = |(id, kind, start, end, active, idle, state, reason): Row<'_>| {
         conn.execute(
             "INSERT INTO tracking_events (id, device_id, application_id, application_name, kind,
@@ -505,52 +586,115 @@ fn check_constraints_reject_inconsistent_rows() {
 
 // ---- crash recovery -----------------------------------------------------------------------
 
+/// `path` with `suffix` appended to the file name (`-wal`, `-shm`).
+fn sibling(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// Copy the database file and its WAL as they are on disk right now, while a connection still
+/// has them open: the state a power cut leaves behind (committed transactions SQLite has
+/// written, no checkpoint, no orderly close). The `-shm` index is not copied; SQLite rebuilds
+/// it from the WAL on the next open.
+fn snapshot_files(path: &Path, into: &Path) {
+    for suffix in ["", "-wal"] {
+        // `std::fs::read` opens with full sharing, so SQLite's open handles do not block it.
+        let bytes = std::fs::read(sibling(path, suffix)).unwrap();
+        std::fs::write(sibling(into, suffix), bytes).unwrap();
+    }
+}
+
 #[test]
 fn local_database_recovery_closes_the_open_interval_at_its_last_checkpoint() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
+    let power_cut = dir.path().join("power-cut.sqlite3");
     let checkpoint_end = at(30);
     let device = {
         let store = Store::open(&path).unwrap();
         let device = store.device_id().unwrap();
-        let earlier = closed_iv("iv-0", "photoshop", Active, at(-60), at(0), EndReason::AppSwitch);
+        let earlier = closed_iv(
+            "iv-0",
+            "photoshop",
+            Active,
+            at(-60),
+            at(0),
+            EndReason::AppSwitch,
+        );
         let mut open = open_iv("iv-1", "figma", Active, at(0), at(15));
         store
             .upsert_intervals(&device, &[earlier, open.clone()])
             .unwrap();
         open.ended_at_ms = checkpoint_end;
         store.upsert_intervals(&device, &[open]).unwrap();
-        // Simulated crash: no shutdown write, and not even the connection's destructor runs.
-        std::mem::forget(store);
+        assert_eq!(store.list_all_events().unwrap()[1].state, "open");
+
+        // Power cut: only the files survive, and the recent commits live only in the WAL.
+        assert!(std::fs::metadata(sibling(&path, "-wal")).unwrap().len() > 0);
+        snapshot_files(&path, &power_cut);
+        // App crash: the Store goes away without the tracker's shutdown write, so the
+        // interval is still `open` in the database.
+        drop(store);
         device
     };
 
-    let store = Store::open(&path).unwrap();
+    for crashed in [&path, &power_cut] {
+        assert_recovered_at_checkpoint(crashed, &device, checkpoint_end);
+    }
+}
+
+/// Reopen a database left behind by a crash and check that recovery closes the open interval
+/// at its last checkpoint, exactly once.
+fn assert_recovered_at_checkpoint(path: &Path, device: &str, checkpoint_end: i64) {
+    let store = Store::open(path).unwrap();
     assert_eq!(store.device_id().unwrap(), device);
     let report = store.recover_open_intervals(2 * SEC).unwrap();
-    assert_eq!(report, RecoveryReport { closed: 1, discarded: 0 });
+    assert_eq!(
+        report,
+        RecoveryReport {
+            closed: 1,
+            discarded: 0
+        }
+    );
 
     let rows = store.list_all_events().unwrap();
     assert_eq!(ids(&rows), ["iv-0", "iv-1"], "no duplicates");
     let recovered = &rows[1];
     assert_eq!(recovered.state, "closed");
     assert_eq!(recovered.end_reason, Some(EndReason::Recovered));
-    assert_eq!(recovered.ended_at_ms, checkpoint_end, "never beyond the last checkpoint");
+    assert_eq!(
+        recovered.ended_at_ms, checkpoint_end,
+        "never beyond the last checkpoint"
+    );
     assert_eq!(recovered.duration_seconds, 30.0);
     assert_eq!(recovered.revision, 3);
-    assert_eq!(rows[0].end_reason, Some(EndReason::AppSwitch), "closed rows untouched");
+    assert_eq!(
+        rows[0].end_reason,
+        Some(EndReason::AppSwitch),
+        "closed rows untouched"
+    );
     assert_eq!(rows[0].revision, 1);
-    assert_eq!(store.high_water_ms(&device).unwrap(), Some(checkpoint_end));
+    assert_eq!(store.high_water_ms(device).unwrap(), Some(checkpoint_end));
 
     // Recovery is idempotent, and a late replay of the open snapshot cannot reopen the row.
-    assert_eq!(store.recover_open_intervals(2 * SEC).unwrap(), RecoveryReport::default());
+    assert_eq!(
+        store.recover_open_intervals(2 * SEC).unwrap(),
+        RecoveryReport::default()
+    );
     let late = open_iv("iv-1", "figma", Active, at(0), at(99));
-    store.upsert_intervals(&device, &[late]).unwrap();
+    store.upsert_intervals(device, &[late]).unwrap();
     assert_eq!(store.list_all_events().unwrap(), rows);
 
     // Tracking resumes with a new open interval after the high-water mark.
-    let resumed = open_iv("iv-2", "figma", Active, checkpoint_end + SEC, checkpoint_end + 5 * SEC);
-    store.upsert_intervals(&device, &[resumed]).unwrap();
+    let resumed = open_iv(
+        "iv-2",
+        "figma",
+        Active,
+        checkpoint_end + SEC,
+        checkpoint_end + 5 * SEC,
+    );
+    store.upsert_intervals(device, &[resumed]).unwrap();
     assert_eq!(store.list_all_events().unwrap().len(), 3);
 }
 
@@ -558,20 +702,39 @@ fn local_database_recovery_closes_the_open_interval_at_its_last_checkpoint() {
 fn recovery_discards_open_rows_shorter_than_the_minimum() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
-    let short_closed = closed_iv("iv-closed", "figma", Active, at(-9), at(-8), EndReason::Paused);
+    let short_closed = closed_iv(
+        "iv-closed",
+        "figma",
+        Active,
+        at(-9),
+        at(-8),
+        EndReason::Paused,
+    );
     let short_open = open_iv("iv-short", "figma", Active, at(0), at(0) + 1_999);
     store
         .upsert_intervals(&device, &[short_closed, short_open])
         .unwrap();
     let report = store.recover_open_intervals(2 * SEC).unwrap();
-    assert_eq!(report, RecoveryReport { closed: 0, discarded: 1 });
+    assert_eq!(
+        report,
+        RecoveryReport {
+            closed: 0,
+            discarded: 1
+        }
+    );
     assert_eq!(ids(&store.list_all_events().unwrap()), ["iv-closed"]);
 
     // Exactly the minimum is kept.
     let exact = open_iv("iv-exact", "figma", Idle, at(0), at(2));
     store.upsert_intervals(&device, &[exact]).unwrap();
     let report = store.recover_open_intervals(2 * SEC).unwrap();
-    assert_eq!(report, RecoveryReport { closed: 1, discarded: 0 });
+    assert_eq!(
+        report,
+        RecoveryReport {
+            closed: 1,
+            discarded: 0
+        }
+    );
     let rows = store.list_all_events().unwrap();
     assert_eq!(ids(&rows), ["iv-closed", "iv-exact"]);
     assert_eq!(rows[1].end_reason, Some(EndReason::Recovered));
@@ -581,7 +744,14 @@ fn recovery_discards_open_rows_shorter_than_the_minimum() {
 fn discard_open_intervals_never_deletes_closed_rows() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
-    let closed = closed_iv("iv-closed", "figma", Active, at(0), at(1), EndReason::AppSwitch);
+    let closed = closed_iv(
+        "iv-closed",
+        "figma",
+        Active,
+        at(0),
+        at(1),
+        EndReason::AppSwitch,
+    );
     let open = open_iv("iv-open", "figma", Active, at(1), at(3));
     store.upsert_intervals(&device, &[closed, open]).unwrap();
 
@@ -598,7 +768,14 @@ fn high_water_is_the_latest_end_on_this_device() {
     let device = store.device_id().unwrap();
     assert_eq!(store.high_water_ms(&device).unwrap(), None);
     let mine = [
-        closed_iv("iv-1", "figma", Active, at(0), at(10), EndReason::BecameIdle),
+        closed_iv(
+            "iv-1",
+            "figma",
+            Active,
+            at(0),
+            at(10),
+            EndReason::BecameIdle,
+        ),
         open_iv("iv-2", "figma", Idle, at(10), at(12)),
     ];
     store.upsert_intervals(&device, &mine).unwrap();
@@ -612,8 +789,22 @@ fn high_water_is_the_latest_end_on_this_device() {
 /// `iv-a` closed [0 s, 10 s), `iv-b` closed idle [10 s, 20 s), `iv-c` open [20 s, 25 s).
 fn three_intervals(store: &Store, device: &str) {
     let intervals = [
-        closed_iv("iv-a", "figma", Active, at(0), at(10), EndReason::BecameIdle),
-        closed_iv("iv-b", "figma", Idle, at(10), at(20), EndReason::InputResumed),
+        closed_iv(
+            "iv-a",
+            "figma",
+            Active,
+            at(0),
+            at(10),
+            EndReason::BecameIdle,
+        ),
+        closed_iv(
+            "iv-b",
+            "figma",
+            Idle,
+            at(10),
+            at(20),
+            EndReason::InputResumed,
+        ),
         open_iv("iv-c", "figma", Active, at(20), at(25)),
     ];
     store.upsert_intervals(device, &intervals).unwrap();
@@ -643,8 +834,22 @@ fn list_events_returns_overlapping_intervals_only() {
 
     // Ordered by start, then id.
     let same_start = [
-        closed_iv("iv-0b", "blender", Active, at(0), at(1), EndReason::AppSwitch),
-        closed_iv("iv-0a", "blender", Active, at(0), at(1), EndReason::AppSwitch),
+        closed_iv(
+            "iv-0b",
+            "blender",
+            Active,
+            at(0),
+            at(1),
+            EndReason::AppSwitch,
+        ),
+        closed_iv(
+            "iv-0a",
+            "blender",
+            Active,
+            at(0),
+            at(1),
+            EndReason::AppSwitch,
+        ),
     ];
     store.upsert_intervals("other-device", &same_start).unwrap();
     assert_eq!(list(at(0), at(1)), ["iv-0a", "iv-0b", "iv-a"]);
@@ -700,10 +905,18 @@ fn settings_round_trip_and_default_when_absent() {
         invalid.tracking.checkpoint_seconds = 1;
         let err = store.save_settings(&invalid).unwrap_err();
         assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
-        assert_eq!(store.load_settings().unwrap(), settings, "nothing was written");
+        assert_eq!(
+            store.load_settings().unwrap(),
+            settings,
+            "nothing was written"
+        );
     }
     let store = Store::open(&path).unwrap();
-    assert_eq!(store.load_settings().unwrap(), settings, "persisted across restarts");
+    assert_eq!(
+        store.load_settings().unwrap(),
+        settings,
+        "persisted across restarts"
+    );
 }
 
 #[test]
@@ -737,14 +950,20 @@ fn corrupt_stored_settings_fall_back_to_defaults_without_crashing() {
         r#"null"#,
     ] {
         put(corrupt);
-        assert_eq!(store.load_settings().unwrap(), Settings::default(), "{corrupt}");
+        assert_eq!(
+            store.load_settings().unwrap(),
+            Settings::default(),
+            "{corrupt}"
+        );
         assert_eq!(stored(), corrupt, "not overwritten until the next save");
     }
 
     // Not JSON at all (the CHECK constraint is bypassed to simulate on-disk corruption).
-    conn.execute_batch("PRAGMA ignore_check_constraints = ON").unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
     put("{definitely not json");
-    conn.execute_batch("PRAGMA ignore_check_constraints = OFF").unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
     assert_eq!(store.load_settings().unwrap(), Settings::default());
 
     // Lenient: unknown fields are ignored and missing fields take defaults.
@@ -786,7 +1005,11 @@ fn seeding_inserts_every_default_once_and_never_overwrites_user_edits() {
     let expected: Vec<&str> = defaults.iter().map(|d| d.id.as_str()).collect();
     assert_eq!(listed, expected, "ordered by sort_order");
 
-    assert_eq!(store.seed_applications(&defaults).unwrap(), 0, "re-seed inserts nothing");
+    assert_eq!(
+        store.seed_applications(&defaults).unwrap(),
+        0,
+        "re-seed inserts nothing"
+    );
 
     // A user edit survives re-seeding.
     let first = &defaults[0];
@@ -818,7 +1041,10 @@ fn seeding_inserts_every_default_once_and_never_overwrites_user_edits() {
     let added = find(&apps, "new-tool");
     assert!(added.built_in);
     assert!(!added.enabled);
-    assert_eq!(added.sort_order, i64::try_from(defaults.len()).unwrap() * 10);
+    assert_eq!(
+        added.sort_order,
+        i64::try_from(defaults.len()).unwrap() * 10
+    );
     assert_eq!(added.matchers[0].path_includes.as_deref(), Some("Vendor"));
     assert_eq!(find(&apps, &first.id), &edited);
 }
@@ -864,7 +1090,14 @@ fn custom_applications_are_created_updated_and_deleted() {
 
     // Tracking history outlives the application (it carries a name snapshot).
     let device = store.device_id().unwrap();
-    let mut history = closed_iv("iv-1", &created.id, Active, at(0), at(60), EndReason::AppSwitch);
+    let mut history = closed_iv(
+        "iv-1",
+        &created.id,
+        Active,
+        at(0),
+        at(60),
+        EndReason::AppSwitch,
+    );
     history.application_name = "My Tool".to_owned();
     store.upsert_intervals(&device, &[history]).unwrap();
 
@@ -895,7 +1128,10 @@ fn built_ins_can_be_edited_but_not_deleted() {
 
     match store.delete_application(&original.id) {
         Err(StoreError::Invalid(message)) => {
-            assert_eq!(message, "built-in applications can be disabled but not deleted");
+            assert_eq!(
+                message,
+                "built-in applications can be disabled but not deleted"
+            );
         }
         other => panic!("expected Invalid, got {other:?}"),
     }
@@ -955,7 +1191,11 @@ fn reset_restores_built_ins_and_optionally_removes_custom_applications() {
         .unwrap();
 
     let apps = store.reset_applications_to(&defaults, false).unwrap();
-    assert_eq!(apps, store.list_applications().unwrap(), "returns the new list");
+    assert_eq!(
+        apps,
+        store.list_applications().unwrap(),
+        "returns the new list"
+    );
     assert_eq!(apps.len(), defaults.len() + 1);
     for (index, default) in defaults.iter().enumerate() {
         let app = find(&apps, &default.id);
@@ -967,7 +1207,10 @@ fn reset_restores_built_ins_and_optionally_removes_custom_applications() {
         assert!(app.built_in);
         assert_eq!(app.sort_order, i64::try_from(index).unwrap() * 10);
     }
-    assert!(apps.iter().any(|a| a.id == latest.id), "missing built-in inserted");
+    assert!(
+        apps.iter().any(|a| a.id == latest.id),
+        "missing built-in inserted"
+    );
     assert_eq!(find(&apps, &custom.id), &custom, "custom kept");
 
     let apps = store.reset_applications_to(&defaults, true).unwrap();
@@ -996,7 +1239,11 @@ fn set_enabled_applications_enables_exactly_the_given_ids() {
     assert_eq!(store.list_applications().unwrap(), apps, "nothing changed");
 
     store.set_enabled_applications(&[]).unwrap();
-    assert!(store.list_applications().unwrap().iter().all(|a| !a.enabled));
+    assert!(store
+        .list_applications()
+        .unwrap()
+        .iter()
+        .all(|a| !a.enabled));
 }
 
 // ---- outbox, summary and exports ----------------------------------------------------------
@@ -1009,15 +1256,39 @@ fn closed_rows_form_the_offline_outbox() {
     store.seed_applications(&defaults()).unwrap();
     let device = store.device_id().unwrap();
     let intervals = [
-        closed_iv("iv-1", "figma", Active, at(0), at(10), EndReason::BecameIdle),
-        closed_iv("iv-2", "figma", Idle, at(10), at(20), EndReason::InputResumed),
-        closed_iv("iv-3", "blender", Active, at(20), at(30), EndReason::AppSwitch),
+        closed_iv(
+            "iv-1",
+            "figma",
+            Active,
+            at(0),
+            at(10),
+            EndReason::BecameIdle,
+        ),
+        closed_iv(
+            "iv-2",
+            "figma",
+            Idle,
+            at(10),
+            at(20),
+            EndReason::InputResumed,
+        ),
+        closed_iv(
+            "iv-3",
+            "blender",
+            Active,
+            at(20),
+            at(30),
+            EndReason::AppSwitch,
+        ),
         open_iv("iv-4", "figma", Active, at(30), at(45)),
     ];
     store.upsert_intervals(&device, &intervals).unwrap();
     // Simulate a later sync of one row.
     raw(&path)
-        .execute("UPDATE tracking_events SET sync_status = 'synced' WHERE id = 'iv-3'", [])
+        .execute(
+            "UPDATE tracking_events SET sync_status = 'synced' WHERE id = 'iv-3'",
+            [],
+        )
         .unwrap();
 
     let rows = store.list_all_events().unwrap();
@@ -1040,9 +1311,18 @@ fn closed_rows_form_the_offline_outbox() {
     assert_eq!(summary.event_count, 4);
     assert_eq!(summary.open_event_count, 1);
     assert_eq!(summary.pending_sync_count, 2, "closed and pending only");
-    assert_eq!(summary.application_count, i64::try_from(defaults().len()).unwrap());
-    assert_eq!(summary.oldest_event_at.as_deref(), Some("2026-10-13T09:15:00.000Z"));
-    assert_eq!(summary.newest_event_at.as_deref(), Some("2026-10-13T09:15:45.000Z"));
+    assert_eq!(
+        summary.application_count,
+        i64::try_from(defaults().len()).unwrap()
+    );
+    assert_eq!(
+        summary.oldest_event_at.as_deref(),
+        Some("2026-10-13T09:15:00.000Z")
+    );
+    assert_eq!(
+        summary.newest_event_at.as_deref(),
+        Some("2026-10-13T09:15:45.000Z")
+    );
     assert_eq!(summary.database_path, path.display().to_string());
     assert_eq!(summary.stored_fields, STORED_TRACKING_FIELDS);
 
@@ -1062,7 +1342,14 @@ fn closed_rows_form_the_offline_outbox() {
 fn stored_records_match_the_live_overlay_and_serialize_in_camel_case() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
-    let idle = closed_iv("iv-1", "figma", Idle, at(0), at(0) + 1_500, EndReason::InputResumed);
+    let idle = closed_iv(
+        "iv-1",
+        "figma",
+        Idle,
+        at(0),
+        at(0) + 1_500,
+        EndReason::InputResumed,
+    );
     let open = open_iv("iv-2", "figma", Active, at(0) + 1_500, at(61) + 501);
     store
         .upsert_intervals(&device, &[idle.clone(), open.clone()])
@@ -1082,14 +1369,34 @@ fn stored_records_match_the_live_overlay_and_serialize_in_camel_case() {
     assert_eq!(rows[1].end_reason, None);
 
     let json = serde_json::to_value(record).unwrap();
-    let mut keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+    let mut keys: Vec<&str> = json
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     keys.sort_unstable();
     assert_eq!(
         keys,
         [
-            "activeSeconds", "applicationId", "applicationName", "deviceId", "durationSeconds",
-            "endReason", "endedAt", "id", "idleSeconds", "kind", "projectId", "revision",
-            "source", "startedAt", "state", "syncStatus", "taskId", "userId",
+            "activeSeconds",
+            "applicationId",
+            "applicationName",
+            "deviceId",
+            "durationSeconds",
+            "endReason",
+            "endedAt",
+            "id",
+            "idleSeconds",
+            "kind",
+            "projectId",
+            "revision",
+            "source",
+            "startedAt",
+            "state",
+            "syncStatus",
+            "taskId",
+            "userId",
         ],
         "the TrackingEvent shape, without the internal *_ms fields"
     );
@@ -1103,7 +1410,13 @@ fn stored_records_match_the_live_overlay_and_serialize_in_camel_case() {
 fn csv_export_quotes_names_with_commas_quotes_and_newlines() {
     let store = Store::open_in_memory().unwrap();
     let device = store.device_id().unwrap();
-    let names = ["Plain", "Studio, Inc", "Say \"hi\"", "Line\nBreak", "Car\r\nReturn"];
+    let names = [
+        "Plain",
+        "Studio, Inc",
+        "Say \"hi\"",
+        "Line\nBreak",
+        "Car\r\nReturn",
+    ];
     let intervals: Vec<Interval> = (0..)
         .zip(names)
         .map(|(i, name)| Interval {
@@ -1125,9 +1438,22 @@ fn csv_export_quotes_names_with_commas_quotes_and_newlines() {
     assert_eq!(
         rows[0],
         [
-            "id", "device_id", "application_id", "application_name", "kind", "started_at",
-            "ended_at", "duration_seconds", "active_seconds", "idle_seconds", "state",
-            "end_reason", "project_id", "task_id", "source", "sync_status",
+            "id",
+            "device_id",
+            "application_id",
+            "application_name",
+            "kind",
+            "started_at",
+            "ended_at",
+            "duration_seconds",
+            "active_seconds",
+            "idle_seconds",
+            "state",
+            "end_reason",
+            "project_id",
+            "task_id",
+            "source",
+            "sync_status",
         ]
     );
     assert_eq!(rows.len(), names.len() + 1);
@@ -1138,9 +1464,22 @@ fn csv_export_quotes_names_with_commas_quotes_and_newlines() {
     assert_eq!(
         rows[1],
         [
-            "iv-0", device.as_str(), "custom-0000beef", "Plain", "active",
-            "2026-10-13T09:15:00.000Z", "2026-10-13T09:15:10.000Z", "10.000", "10.000",
-            "0.000", "closed", "appSwitch", "", "", "automatic", "pending",
+            "iv-0",
+            device.as_str(),
+            "custom-0000beef",
+            "Plain",
+            "active",
+            "2026-10-13T09:15:00.000Z",
+            "2026-10-13T09:15:10.000Z",
+            "10.000",
+            "10.000",
+            "0.000",
+            "closed",
+            "appSwitch",
+            "",
+            "",
+            "automatic",
+            "pending",
         ]
     );
     // Literal encoding of the tricky fields.
@@ -1158,10 +1497,18 @@ fn json_export_has_the_documented_shape() {
     three_intervals(&store, &device);
     let records = store.list_all_events().unwrap();
     let text = export_json(&records, &device, at(3_600));
-    assert!(text.starts_with("{\n  \"exportedAt\""), "pretty-printed, documented order");
+    assert!(
+        text.starts_with("{\n  \"exportedAt\""),
+        "pretty-printed, documented order"
+    );
 
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
-    let mut keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+    let mut keys: Vec<&str> = json
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     keys.sort_unstable();
     assert_eq!(keys, ["deviceId", "events", "exportedAt", "format"]);
     assert_eq!(json["format"], EXPORT_FORMAT);
@@ -1178,7 +1525,10 @@ fn json_export_has_the_documented_shape() {
     assert_eq!(events[1]["idleSeconds"], 10.0);
     assert_eq!(events[2]["state"], "open");
     assert_eq!(events[2]["endReason"], serde_json::Value::Null);
-    assert!(events[0].get("startedAtMs").is_none(), "internal fields are not exported");
+    assert!(
+        events[0].get("startedAtMs").is_none(),
+        "internal fields are not exported"
+    );
     assert_eq!(events[0], serde_json::to_value(&records[0]).unwrap());
 
     let empty: serde_json::Value = serde_json::from_str(&export_json(&[], &device, T0)).unwrap();
