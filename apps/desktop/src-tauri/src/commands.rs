@@ -203,7 +203,7 @@ pub fn complete_onboarding(
         .request(|reply| TrackerCommand::SettingsChanged { reply });
     let _ = app.emit(EVENT_APPLICATIONS_CHANGED, registry.apps());
     let _ = app.emit(EVENT_SETTINGS_CHANGED, &next);
-    log::info!(
+    log::debug!(
         "onboarding completed with {} application(s) enabled",
         enabled_application_ids.len()
     );
@@ -233,7 +233,7 @@ pub fn set_launch_at_login(
     };
     match result {
         Ok(status) => {
-            log::info!(
+            log::debug!(
                 "launch at login {}: enabled={}",
                 if enabled { "enable" } else { "disable" },
                 status.enabled
@@ -444,7 +444,7 @@ pub async fn export_tracking_events(
         .into_path()
         .map_err(|_| CommandError::validation("Choose a location on this computer."))?;
     write_export(&path, &content)?;
-    log::info!("exported {} tracking record(s)", records.len());
+    log::debug!("exported {} tracking record(s)", records.len());
     Ok(Some(ExportResult {
         path: path.to_string_lossy().into_owned(),
         count: records.len(),
@@ -490,7 +490,7 @@ pub fn delete_tracking_events(
         log::error!("history deletion failed: {err}");
         CommandError::new(ErrorCode::Storage, "Tracking history could not be deleted.")
     })?;
-    log::info!("deleted {deleted} tracking record(s)");
+    log::debug!("deleted {deleted} tracking record(s)");
     let _ = app.emit(
         EVENT_EVENTS_CHANGED,
         serde_json::json!({ "at": store::iso_from_ms(now_ms()) }),

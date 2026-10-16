@@ -34,7 +34,8 @@ pub use format::{export_csv, export_json, iso_from_ms, EXPORT_FORMAT};
 /// Ordered migrations, embedded at compile time. Index + 1 = `PRAGMA user_version` after applying.
 pub const MIGRATIONS: &[&str] = &[include_str!("../../migrations/0001_init.sql")];
 
-/// Column names stored per tracking record (shown verbatim in Privacy settings).
+/// Every column of `tracking_events`, exactly as stored (shown verbatim in Privacy settings).
+/// A test keeps this in lockstep with the schema.
 pub const STORED_TRACKING_FIELDS: &[&str] = &[
     "id",
     "device_id",
@@ -42,8 +43,8 @@ pub const STORED_TRACKING_FIELDS: &[&str] = &[
     "application_id",
     "application_name",
     "kind",
-    "started_at",
-    "ended_at",
+    "started_at_ms",
+    "ended_at_ms",
     "active_ms",
     "idle_ms",
     "state",
@@ -53,7 +54,18 @@ pub const STORED_TRACKING_FIELDS: &[&str] = &[
     "source",
     "sync_status",
     "revision",
+    "created_at_ms",
+    "updated_at_ms",
 ];
+
+/// A user pause that must survive restarts ("Pause until I resume", "Pause for 1 hour").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PauseRecord {
+    /// Paused until the user resumes.
+    UntilResumed,
+    /// Paused until this UTC epoch ms.
+    Until(EpochMs),
+}
 
 /// Everything that can go wrong in the store.
 #[derive(Debug, thiserror::Error)]
@@ -241,6 +253,9 @@ impl Store {
 
     /// Insert built-in applications missing by id (first run, or new built-ins after an upgrade).
     /// Existing rows, including user edits, are never touched. Returns the number inserted.
+    ///
+    /// Consent: once onboarding is complete, newly added built-ins are inserted **disabled**, so
+    /// an upgrade never starts tracking an application the user did not choose.
     pub fn seed_default_applications(&self) -> StoreResult<usize> {
         self.seed_applications(&crate::registry::default_applications())
     }
@@ -250,7 +265,10 @@ impl Store {
     /// A definition that violates the schema fails the whole call: nothing is skipped silently.
     pub fn seed_applications(&self, defaults: &[DefaultApplication]) -> StoreResult<usize> {
         let now = now_ms();
-        self.write(|tx| applications::seed(tx, defaults, now))
+        self.write(|tx| {
+            let onboarded = preferences::load_settings(tx)?.onboarding.completed;
+            applications::seed(tx, defaults, !onboarded, now)
+        })
     }
 
     /// Ordered by sort_order, then display name.
@@ -378,8 +396,31 @@ impl Store {
 
     /// `None` deletes every row (the caller resets the engine). `Some(t)` deletes closed rows
     /// that ended at or before `t`. Returns rows deleted.
+    ///
+    /// Deleted data does not linger: `secure_delete` zeroes the freed pages, and a
+    /// `wal_checkpoint(TRUNCATE)` afterwards empties the write-ahead log, which still held the
+    /// pre-delete page images.
     pub fn delete_events(&self, before_ms: Option<EpochMs>) -> StoreResult<u64> {
-        self.write(|tx| events::delete(tx, before_ms))
+        let deleted = self.write(|tx| events::delete(tx, before_ms))?;
+        if self.path.is_some() {
+            self.with_conn(|conn| {
+                conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+                Ok(())
+            })?;
+        }
+        Ok(deleted)
+    }
+
+    // ---- tracker pause -------------------------------------------------------------------
+
+    /// The persisted user pause, if any (restored by the tracker at startup).
+    pub fn load_pause(&self) -> StoreResult<Option<PauseRecord>> {
+        self.with_conn(preferences::load_pause)
+    }
+
+    /// Persist (`Some`) or clear (`None`) the user pause.
+    pub fn save_pause(&self, pause: Option<PauseRecord>) -> StoreResult<()> {
+        self.with_conn(|conn| preferences::save_pause(conn, pause))
     }
 
     /// Counts and bounds for the Privacy settings page.

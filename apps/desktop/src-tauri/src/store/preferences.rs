@@ -5,10 +5,13 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::settings::Settings;
 use crate::tracker::EpochMs;
 
-use super::{StoreError, StoreResult};
+use super::{PauseRecord, StoreError, StoreResult};
 
 const DEVICE_ID_KEY: &str = "device_id";
 const SETTINGS_KEY: &str = "settings";
+/// `until-resumed` or the UTC epoch ms a timed pause ends. Absent = not paused.
+const PAUSE_KEY: &str = "tracker_pause";
+const PAUSE_UNTIL_RESUMED: &str = "until-resumed";
 
 /// The device id, generated (UUIDv4) and stored on first use.
 ///
@@ -35,6 +38,45 @@ fn read_meta(conn: &Connection, key: &str) -> StoreResult<Option<String>> {
             |row| row.get(0),
         )
         .optional()?)
+}
+
+/// The persisted user pause, if any. An unreadable value is logged and treated as "paused until
+/// resumed": when in doubt, do not record.
+pub(super) fn load_pause(conn: &Connection) -> StoreResult<Option<PauseRecord>> {
+    let Some(value) = read_meta(conn, PAUSE_KEY)? else {
+        return Ok(None);
+    };
+    if value == PAUSE_UNTIL_RESUMED {
+        return Ok(Some(PauseRecord::UntilResumed));
+    }
+    match value.parse::<EpochMs>() {
+        Ok(until) => Ok(Some(PauseRecord::Until(until))),
+        Err(_) => {
+            log::warn!("stored pause state is unreadable; keeping tracking paused");
+            Ok(Some(PauseRecord::UntilResumed))
+        }
+    }
+}
+
+/// Persist (`Some`) or clear (`None`) the user pause.
+pub(super) fn save_pause(conn: &Connection, pause: Option<PauseRecord>) -> StoreResult<()> {
+    match pause {
+        None => {
+            conn.execute("DELETE FROM meta WHERE key = ?1", params![PAUSE_KEY])?;
+        }
+        Some(record) => {
+            let value = match record {
+                PauseRecord::UntilResumed => PAUSE_UNTIL_RESUMED.to_owned(),
+                PauseRecord::Until(until) => until.to_string(),
+            };
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![PAUSE_KEY, value],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Stored settings, or defaults when absent or invalid (logged; the stored document is kept

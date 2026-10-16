@@ -280,10 +280,13 @@ fn explain(
 fn verify_enabled(registration: &Registration, expected_command: &str) -> Result<(), String> {
     match registration.command.as_deref() {
         Some(command) if command == expected_command => {}
-        Some(command) => {
-            return Err(format!(
-                "the Run value reads back as {command:?} instead of {expected_command:?}"
-            ))
+        Some(_) => {
+            // The values are deliberately not included: the command contains the user's
+            // profile path, and this message is logged and shown in the UI.
+            return Err(
+                "the Run value reads back differently from what was written (another program may                  have changed it)"
+                    .to_string(),
+            );
         }
         None if registration.run_present => {
             return Err("the Run value reads back with a non-text type".to_string())

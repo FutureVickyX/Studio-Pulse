@@ -152,7 +152,7 @@ impl Engine {
         match continuity {
             Some((_, _, Continuity::Continuous)) => self.extend_open(sample.wall_ms),
             Some((prev_wall, prev_mono, Continuity::Broken(reason))) => {
-                log::info!(
+                log::debug!(
                     "tracker: sample discontinuity ({}): wall delta {} ms, mono delta {} ms; \
                      the gap is not credited",
                     reason.as_str(),

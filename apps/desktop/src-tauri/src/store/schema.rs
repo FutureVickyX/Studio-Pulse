@@ -26,6 +26,9 @@ pub(super) fn configure(conn: &Connection, file_backed: bool) -> StoreResult<()>
     // which crash recovery already tolerates (it under-counts, never over-counts).
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
+    // Deleted rows are overwritten with zeros instead of lingering in free pages, so "Delete
+    // history" really removes them from the file (see Store::delete_events for the WAL side).
+    conn.pragma_update(None, "secure_delete", true)?;
     Ok(())
 }
 

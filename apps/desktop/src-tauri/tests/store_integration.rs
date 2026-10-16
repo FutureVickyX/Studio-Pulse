@@ -15,8 +15,8 @@ use studio_pulse_lib::registry::{
 };
 use studio_pulse_lib::settings::{Settings, ThemePreference};
 use studio_pulse_lib::store::{
-    export_csv, export_json, iso_from_ms, record_from_interval, RecoveryReport, Store, StoreError,
-    TrackingEventRecord, EXPORT_FORMAT, MIGRATIONS, STORED_TRACKING_FIELDS,
+    export_csv, export_json, iso_from_ms, record_from_interval, PauseRecord, RecoveryReport, Store,
+    StoreError, TrackingEventRecord, EXPORT_FORMAT, MIGRATIONS, STORED_TRACKING_FIELDS,
 };
 use studio_pulse_lib::tracker::IntervalKind::{Active, Idle};
 use studio_pulse_lib::tracker::{EndReason, Interval, IntervalKind};
@@ -1549,4 +1549,128 @@ fn iso_timestamps_are_utc_with_milliseconds_and_safe_for_any_input() {
     for ms in [i64::MIN, -1, 0, T0, i64::MAX] {
         assert_eq!(iso_from_ms(ms).len(), 24);
     }
+}
+
+// ---- review fixes: field list, secure deletion, consent on upgrade, persisted pause --------
+
+#[test]
+fn the_privacy_field_list_matches_every_stored_column() {
+    let store = Store::open_in_memory().unwrap();
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    drop(store);
+    drop(Store::open(&path).unwrap());
+    let conn = raw(&path);
+    let mut stmt = conn
+        .prepare("SELECT name FROM pragma_table_info('tracking_events') ORDER BY cid")
+        .unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(columns, STORED_TRACKING_FIELDS);
+}
+
+/// Every byte of the database and its WAL, for "is this text still on disk?" checks.
+fn database_bytes(path: &Path) -> Vec<u8> {
+    let mut bytes = std::fs::read(path).unwrap();
+    if let Ok(wal) = std::fs::read(sibling(path, "-wal")) {
+        bytes.extend(wal);
+    }
+    bytes
+}
+
+fn contains(haystack: &[u8], needle: &str) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle.as_bytes())
+}
+
+#[test]
+fn deleted_history_is_not_recoverable_from_the_database_or_its_wal() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    let store = Store::open(&path).unwrap();
+    let marker = "zz-private-client-project-marker";
+    let intervals: Vec<Interval> = (0..200)
+        .map(|i| {
+            let mut iv = closed_iv(
+                &format!("iv-{i}"),
+                "adobe-photoshop",
+                Active,
+                at(i * 10),
+                at(i * 10 + 5),
+                EndReason::AppSwitch,
+            );
+            iv.application_name = marker.to_owned();
+            iv
+        })
+        .collect();
+    store.upsert_intervals("dev", &intervals).unwrap();
+    assert!(
+        contains(&database_bytes(&path), marker),
+        "the marker was written"
+    );
+
+    assert_eq!(store.delete_events(None).unwrap(), 200);
+    assert!(store.list_all_events().unwrap().is_empty());
+    assert!(
+        !contains(&database_bytes(&path), marker),
+        "deleted rows must not survive in free pages or the WAL"
+    );
+}
+
+#[test]
+fn built_ins_added_after_onboarding_arrive_disabled() {
+    let store = Store::open_in_memory().unwrap();
+    let all = defaults();
+    let (first, later) = all.split_at(all.len() - 2);
+
+    // First run: before onboarding, defaults pre-select the checklist.
+    store.seed_applications(first).unwrap();
+    assert!(find(&store.list_applications().unwrap(), &first[0].id).enabled);
+
+    // The user completes onboarding.
+    let mut settings = Settings::default();
+    settings.onboarding.completed = true;
+    store.save_settings(&settings).unwrap();
+
+    // An upgrade adds two built-ins: they must not be tracked without opting in.
+    assert_eq!(store.seed_applications(&all).unwrap(), 2);
+    let apps = store.list_applications().unwrap();
+    for app in later {
+        assert!(
+            !find(&apps, &app.id).enabled,
+            "{} was enabled without consent",
+            app.id
+        );
+    }
+    assert!(find(&apps, &first[0].id).enabled, "existing rows untouched");
+}
+
+#[test]
+fn a_user_pause_round_trips_and_clears() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir);
+    {
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.load_pause().unwrap(), None);
+        store
+            .save_pause(Some(PauseRecord::Until(at(3600))))
+            .unwrap();
+        assert_eq!(
+            store.load_pause().unwrap(),
+            Some(PauseRecord::Until(at(3600)))
+        );
+        store.save_pause(Some(PauseRecord::UntilResumed)).unwrap();
+    }
+    let store = Store::open(&path).unwrap();
+    assert_eq!(
+        store.load_pause().unwrap(),
+        Some(PauseRecord::UntilResumed),
+        "survives reopening"
+    );
+    store.save_pause(None).unwrap();
+    assert_eq!(store.load_pause().unwrap(), None);
 }

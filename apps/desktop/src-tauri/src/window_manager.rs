@@ -6,6 +6,9 @@ use tauri::{
     WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use crate::settings::{Settings, ThemePreference};
 
 pub const MAIN: &str = "main";
@@ -15,6 +18,19 @@ const INDICATOR_WIDTH: f64 = 320.0;
 const INDICATOR_HEIGHT: f64 = 204.0;
 /// Gap between the indicator and the taskbar / screen edge, in logical pixels.
 const EDGE_GAP: f64 = 12.0;
+/// A tray click this soon after the indicator hid itself on blur is the same gesture: pressing
+/// the tray icon took focus away from the indicator. Treat it as "close", not "open again".
+const BLUR_CLICK_WINDOW: Duration = Duration::from_millis(400);
+
+/// When the indicator last hid itself because it lost focus.
+static LAST_BLUR_HIDE: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn hidden_by_blur_just_now() -> bool {
+    LAST_BLUR_HIDE
+        .lock()
+        .map(|last| last.is_some_and(|at| at.elapsed() < BLUR_CLICK_WINDOW))
+        .unwrap_or(false)
+}
 
 /// Which window to show when the process starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +106,10 @@ pub fn toggle_indicator<R: Runtime>(app: &AppHandle<R>, anchor: Option<Rect>) {
             let _ = window.hide();
             return;
         }
+        // Pressing the tray icon blurred (and so hid) the indicator before this click arrived.
+        if hidden_by_blur_just_now() {
+            return;
+        }
     }
     show_indicator(app, anchor);
 }
@@ -121,6 +141,9 @@ fn indicator_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> 
             let handle = window.clone();
             window.on_window_event(move |event| {
                 if let WindowEvent::Focused(false) = event {
+                    if let Ok(mut last) = LAST_BLUR_HIDE.lock() {
+                        *last = Some(Instant::now());
+                    }
                     let _ = handle.hide();
                 }
             });

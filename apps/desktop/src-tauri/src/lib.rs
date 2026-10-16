@@ -33,7 +33,8 @@ use crate::settings::Settings;
 use crate::startup::StartupConfig;
 use crate::store::Store;
 use crate::tracker::service::{
-    self, SystemClock, TrackerCommand, TrackerCore, TrackerDeps, TrackerObserver, TrackerStatus,
+    self, SystemClock, TrackerCommand, TrackerCore, TrackerDeps, TrackerObserver, TrackerState,
+    TrackerStatus,
 };
 
 /// Database file inside the app data directory (`%APPDATA%\com.studiopulse.desktop`).
@@ -153,18 +154,58 @@ fn initialise(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let view = window_manager::startup_view(&settings, launched_at_login);
     window_manager::apply_startup_view(&handle, view);
 
-    if launched_at_login
-        && settings.tracking.notifications
-        && settings.onboarding.completed
-        && settings.tracking.enabled
-    {
-        notify(
-            &handle,
-            "Studio Pulse is running",
-            "Tracking your enabled creative apps in the background. Pause any time from the tray.",
-        );
+    if launched_at_login && settings.tracking.notifications && settings.onboarding.completed {
+        // Say what is actually happening: a sign-in launch may start paused (a pause kept from
+        // the last session, or "Start tracking automatically" off) or with tracking switched off.
+        match initial_status.state {
+            TrackerState::Paused => notify(
+                &handle,
+                "Studio Pulse is running",
+                "Tracking is paused. Resume from the tray when you're ready.",
+            ),
+            TrackerState::Disabled | TrackerState::NotStarted => {}
+            _ => notify(
+                &handle,
+                "Studio Pulse is running",
+                "Tracking your enabled creative apps in the background. Pause any time from the tray.",
+            ),
+        }
     }
     Ok(())
+}
+
+/// Tell the user why Studio Pulse cannot start (the window and tray do not exist yet, and
+/// release builds have no console). Runs before the process exits.
+fn show_fatal_error(err: &dyn std::error::Error) {
+    let detail = if err.to_string().contains("newer than this app") {
+        "Your Studio Pulse data was saved by a newer version of the app. Install the latest \
+         version of Studio Pulse to keep using it; the data has not been changed."
+            .to_string()
+    } else {
+        format!("{err}")
+    };
+    let text = format!(
+        "Studio Pulse could not start.\n\n{detail}\n\nYour data stays in \
+         %APPDATA%\\com.studiopulse.desktop and the log is in \
+         %LOCALAPPDATA%\\com.studiopulse.desktop\\logs."
+    );
+    #[cfg(windows)]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+        // SAFETY: both strings are valid, NUL-terminated HSTRINGs that outlive the call; no
+        // owner window is needed for a modal error box.
+        unsafe {
+            MessageBoxW(
+                None,
+                &HSTRING::from(text),
+                &HSTRING::from("Studio Pulse"),
+                MB_OK | MB_ICONERROR,
+            );
+        }
+    }
+    #[cfg(not(windows))]
+    eprintln!("{text}");
 }
 
 /// Close the open interval and stop the tracker thread before the process exits.
@@ -203,10 +244,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            initialise(app).map_err(|err| {
+            if let Err(err) = initialise(app) {
                 log::error!("Studio Pulse failed to start: {err}");
-                err
-            })
+                show_fatal_error(err.as_ref());
+                // Exit cleanly instead of letting Tauri panic on the setup error.
+                std::process::exit(1);
+            }
+            Ok(())
         })
         .on_window_event(window_manager::handle_main_window_event)
         .invoke_handler(tauri::generate_handler![

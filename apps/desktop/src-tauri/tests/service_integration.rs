@@ -495,3 +495,180 @@ fn idle_time_is_split_from_active_time() {
     assert_eq!(active + idle, foreground);
     assert_no_overlaps(&rows);
 }
+
+// ---- review fixes: persisted pauses, storage failures and the retry buffer ----------------
+
+/// Make every write to `tracking_events` fail (as if the disk were full) while `on` is true.
+/// Uses triggers on a second connection, so the real store and tracker run their real retry
+/// paths.
+fn simulate_storage_failure(path: &std::path::Path, on: bool) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS test_fail (on_flag INTEGER NOT NULL);
+         CREATE TRIGGER IF NOT EXISTS test_fail_insert BEFORE INSERT ON tracking_events
+             WHEN (SELECT COUNT(*) FROM test_fail WHERE on_flag = 1) > 0
+             BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;
+         CREATE TRIGGER IF NOT EXISTS test_fail_update BEFORE UPDATE ON tracking_events
+             WHEN (SELECT COUNT(*) FROM test_fail WHERE on_flag = 1) > 0
+             BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;
+         CREATE TRIGGER IF NOT EXISTS test_fail_delete BEFORE DELETE ON tracking_events
+             WHEN (SELECT COUNT(*) FROM test_fail WHERE on_flag = 1) > 0
+             BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;
+         DELETE FROM test_fail;",
+    )
+    .unwrap();
+    if on {
+        conn.execute("INSERT INTO test_fail (on_flag) VALUES (1)", [])
+            .unwrap();
+    }
+}
+
+fn file_harness(dir: &tempfile::TempDir, world: World) -> Harness {
+    let store = Arc::new(Store::open(&dir.path().join("studio-pulse.sqlite3")).unwrap());
+    harness_with(store, world, onboarded_settings())
+}
+
+fn open_rows(rows: &[TrackingEventRecord]) -> usize {
+    rows.iter().filter(|r| r.state == "open").count()
+}
+
+#[test]
+fn pause_until_resumed_survives_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let world = World::new();
+    {
+        let mut h = file_harness(&dir, world.clone());
+        h.world.focus("Photoshop.exe");
+        h.run_seconds(10, true);
+        h.send(|reply| TrackerCommand::Pause {
+            until_ms: None,
+            reply,
+        });
+        h.send(|reply| TrackerCommand::Shutdown { reply });
+    }
+    // Restart (e.g. Windows Update reboot with launch at login): still paused.
+    let mut h = file_harness(&dir, world);
+    assert_eq!(h.core.status().state, TrackerState::Paused);
+    h.run_seconds(60, true);
+    assert_eq!(h.rows().len(), 1, "nothing recorded after the restart");
+
+    h.send(|reply| TrackerCommand::Resume { reply });
+    h.run_seconds(10, true);
+    assert_eq!(h.core.status().state, TrackerState::Tracking);
+    assert_eq!(h.rows().len(), 2);
+    assert_eq!(
+        h.store.load_pause().unwrap(),
+        None,
+        "resume clears the stored pause"
+    );
+}
+
+#[test]
+fn a_timed_pause_survives_a_restart_and_still_expires() {
+    let dir = tempfile::tempdir().unwrap();
+    let world = World::new();
+    let until;
+    {
+        let mut h = file_harness(&dir, world.clone());
+        h.world.focus("blender.exe");
+        h.run_seconds(5, true);
+        until = h.world.wall() + 60_000;
+        h.send(|reply| TrackerCommand::Pause {
+            until_ms: Some(until),
+            reply,
+        });
+        h.send(|reply| TrackerCommand::Shutdown { reply });
+    }
+    let mut h = file_harness(&dir, world);
+    let status = h.core.status();
+    assert_eq!(status.state, TrackerState::Paused);
+    assert!(status.paused_until.is_some());
+    h.run_seconds(50, true);
+    assert_eq!(h.core.status().state, TrackerState::Paused);
+    h.run_seconds(15, true);
+    assert_eq!(h.core.status().state, TrackerState::Tracking);
+    assert_eq!(h.store.load_pause().unwrap(), None);
+}
+
+#[test]
+fn an_expired_pause_does_not_block_tracking_after_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let world = World::new();
+    {
+        let h = file_harness(&dir, world.clone());
+        h.store
+            .save_pause(Some(studio_pulse_lib::store::PauseRecord::Until(
+                world.wall() - 1,
+            )))
+            .unwrap();
+    }
+    let mut h = file_harness(&dir, world);
+    h.world.focus("Figma.exe");
+    h.run_seconds(5, true);
+    assert_eq!(h.core.status().state, TrackerState::Tracking);
+}
+
+#[test]
+fn a_discarded_interval_is_never_resurrected_by_the_retry_buffer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("studio-pulse.sqlite3");
+    let mut h = file_harness(&dir, World::new());
+    h.world.focus("Photoshop.exe");
+    // Interval A opens at +1 s; the last input is at +2 s, so A is later cut back to 1 s.
+    h.run_seconds(2, true);
+    simulate_storage_failure(&path, true);
+    // Five minutes without input while every write fails: A is cut back to under the minimum
+    // length at the last input and discarded; an idle interval B starts there.
+    h.run_seconds(305, false);
+    assert_eq!(h.core.status().state, TrackerState::Idle);
+    simulate_storage_failure(&path, false);
+    h.run_seconds(3, false); // storage recovers; buffers flush
+    h.run_seconds(20, true); // the user is back
+    h.world.focus_nothing();
+    h.run_seconds(3, true);
+    h.send(|reply| TrackerCommand::Shutdown { reply });
+
+    let rows = h.rows();
+    assert_eq!(open_rows(&rows), 0, "no stray open row: {rows:#?}");
+    assert_no_overlaps(&rows);
+    let active: f64 = rows.iter().map(|r| r.active_seconds).sum();
+    let idle: f64 = rows.iter().map(|r| r.idle_seconds).sum();
+    assert!(idle >= 300.0, "idle {idle} s recorded as idle");
+    assert!(
+        active <= 25.0,
+        "idle time must not become active ({active} s)"
+    );
+}
+
+#[test]
+fn deleting_old_history_keeps_recent_writes_that_were_waiting_to_be_retried() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("studio-pulse.sqlite3");
+    let mut h = file_harness(&dir, World::new());
+    h.world.focus("Photoshop.exe");
+    h.run_seconds(30, true);
+    simulate_storage_failure(&path, true);
+    h.world.focus("blender.exe"); // Photoshop closes; the close is buffered
+    h.run_seconds(5, true);
+    simulate_storage_failure(&path, false);
+    let cutoff = h.world.wall() - 30 * 24 * 60 * 60 * 1000;
+    let deleted = h.send(|reply| TrackerCommand::DeleteHistory {
+        before_ms: Some(cutoff),
+        reply,
+    });
+    assert_eq!(deleted, Ok(0));
+    h.run_seconds(30, true);
+    h.send(|reply| TrackerCommand::Shutdown { reply });
+
+    let rows = h.rows();
+    assert_eq!(open_rows(&rows), 0, "{rows:#?}");
+    let photoshop = rows
+        .iter()
+        .find(|r| r.application_id == "adobe-photoshop")
+        .expect("Photoshop interval kept");
+    assert_eq!(reason(photoshop), Some(EndReason::AppSwitch));
+    assert!(rows.iter().any(|r| r.application_id == "blender"));
+    assert_no_overlaps(&rows);
+}

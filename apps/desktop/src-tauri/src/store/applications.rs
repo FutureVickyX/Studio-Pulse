@@ -45,12 +45,17 @@ const RESTORE_DEFAULT: &str = "ON CONFLICT(id) DO UPDATE SET
         updated_at_ms = excluded.updated_at_ms";
 
 /// Insert built-ins missing by id; existing rows (and user edits) are left alone.
+///
+/// `enable_new` is false once the user has completed onboarding: a built-in added by a later
+/// release is then inserted disabled, so nothing starts being tracked without the user opting
+/// in. Before onboarding, `enabled_by_default` pre-selects the onboarding checklist.
 pub(super) fn seed(
     tx: &Transaction<'_>,
     defaults: &[DefaultApplication],
+    enable_new: bool,
     now: EpochMs,
 ) -> StoreResult<usize> {
-    write_built_ins(tx, defaults, KEEP_EXISTING, now)
+    write_built_ins(tx, defaults, KEEP_EXISTING, enable_new, now)
 }
 
 /// Rewrite every built-in in `defaults` to its default definition (inserting missing ones) and
@@ -61,7 +66,7 @@ pub(super) fn reset(
     remove_custom: bool,
     now: EpochMs,
 ) -> StoreResult<Vec<ApplicationDefinition>> {
-    write_built_ins(tx, defaults, RESTORE_DEFAULT, now)?;
+    write_built_ins(tx, defaults, RESTORE_DEFAULT, true, now)?;
     if remove_custom {
         tx.execute("DELETE FROM applications WHERE built_in = 0", [])?;
     }
@@ -69,10 +74,12 @@ pub(super) fn reset(
 }
 
 /// Write each default with [`INSERT_BUILT_IN`] + `on_conflict`. Returns the rows changed.
+/// `allow_enabled = false` writes every row disabled regardless of `enabled_by_default`.
 fn write_built_ins(
     tx: &Transaction<'_>,
     defaults: &[DefaultApplication],
     on_conflict: &str,
+    allow_enabled: bool,
     now: EpochMs,
 ) -> StoreResult<usize> {
     let mut stmt = tx.prepare_cached(&format!("{INSERT_BUILT_IN} {on_conflict}"))?;
@@ -83,7 +90,7 @@ fn write_built_ins(
             app.display_name,
             app.category.as_str(),
             serde_json::to_string(&app.matchers)?,
-            app.enabled_by_default,
+            app.enabled_by_default && allow_enabled,
             built_in_sort_order(index),
             now,
         ])?;

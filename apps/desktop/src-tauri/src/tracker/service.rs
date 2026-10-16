@@ -17,7 +17,7 @@ use serde::Serialize;
 use crate::platform::SystemProbe;
 use crate::registry::{AppCategory, Registry};
 use crate::settings::Settings;
-use crate::store::{iso_from_ms, Store, StoreError};
+use crate::store::{iso_from_ms, PauseRecord, Store, StoreError};
 
 use super::engine::Engine;
 use super::types::{
@@ -209,6 +209,28 @@ fn read_settings(settings: &Arc<RwLock<Settings>>) -> Settings {
     }
 }
 
+/// The user's persisted pause, if it is still in force at `now`. An expired timed pause is
+/// cleared. Pauses survive restarts: "Pause until I resume" means exactly that.
+fn restored_pause(store: &Store, now: EpochMs) -> Option<Mode> {
+    match store.load_pause() {
+        Ok(Some(PauseRecord::UntilResumed)) => Some(Mode::Paused { until_ms: None }),
+        Ok(Some(PauseRecord::Until(until))) if until > now => Some(Mode::Paused {
+            until_ms: Some(until),
+        }),
+        Ok(Some(PauseRecord::Until(_))) => {
+            if let Err(err) = store.save_pause(None) {
+                log::warn!("could not clear an expired pause: {err}");
+            }
+            None
+        }
+        Ok(None) => None,
+        Err(err) => {
+            log::warn!("could not read the stored pause state: {err}");
+            None
+        }
+    }
+}
+
 fn mode_for(settings: &Settings, at_startup: bool) -> Mode {
     if !settings.onboarding.completed {
         Mode::NotStarted
@@ -223,13 +245,19 @@ fn mode_for(settings: &Settings, at_startup: bool) -> Mode {
 
 impl TrackerCore {
     /// Build the core. Applies startup policy: onboarding incomplete → `NotStarted`; tracking
-    /// disabled → `Disabled`; `startAutomatically = false` → paused until resumed. Crash recovery
+    /// disabled → `Disabled`; a user pause persisted before the restart → still paused;
+    /// `startAutomatically = false` → paused until resumed. Crash recovery
     /// (`Store::recover_open_intervals`) must already have run.
     pub fn new(deps: TrackerDeps) -> Result<Self, StoreError> {
         let settings = read_settings(&deps.settings);
         let high_water = deps.store.high_water_ms(&deps.device_id)?;
         let mut engine = Engine::new(settings.engine_config(), high_water, Box::new(UuidV7Ids));
-        let mode = mode_for(&settings, true);
+        let mut mode = mode_for(&settings, true);
+        if matches!(mode, Mode::Running | Mode::Paused { .. }) {
+            if let Some(paused) = restored_pause(&deps.store, deps.clock.wall_ms()) {
+                mode = paused;
+            }
+        }
         if mode != Mode::Running {
             // Nothing is open yet, so this only puts the engine in its paused state.
             let _ = engine.pause(EndReason::Paused);
@@ -274,7 +302,8 @@ impl TrackerCore {
             if wall >= until {
                 self.engine.resume();
                 self.mode = Mode::Running;
-                log::info!("timed pause expired; tracking resumed");
+                self.persist_pause(None);
+                log::debug!("timed pause expired; tracking resumed");
                 self.deps.observer.auto_resumed();
             }
         }
@@ -299,8 +328,12 @@ impl TrackerCore {
                         let out = self.engine.pause(EndReason::Paused);
                         wrote = self.apply(out);
                         self.mode = Mode::Paused { until_ms };
+                        self.persist_pause(Some(pause_record(until_ms)));
                     }
-                    Mode::Paused { .. } => self.mode = Mode::Paused { until_ms },
+                    Mode::Paused { .. } => {
+                        self.mode = Mode::Paused { until_ms };
+                        self.persist_pause(Some(pause_record(until_ms)));
+                    }
                     Mode::NotStarted | Mode::Disabled => {}
                 }
                 self.publish(wrote);
@@ -311,6 +344,7 @@ impl TrackerCore {
                     self.engine.resume();
                     self.mode = Mode::Running;
                 }
+                self.persist_pause(None);
                 self.publish(false);
                 let _ = reply.send(());
             }
@@ -381,14 +415,40 @@ impl TrackerCore {
         }
     }
 
+    /// Save or clear the user pause so it survives restarts. A failure is logged; the pause still
+    /// applies for this session.
+    fn persist_pause(&self, pause: Option<PauseRecord>) {
+        if let Err(err) = self.deps.store.save_pause(pause) {
+            log::warn!("could not store the pause state: {err}");
+        }
+    }
+
+    /// Queue an interval write, keeping at most one entry per id: a newer snapshot replaces an
+    /// older one, and a closed version is never replaced by an open one. Upserts are
+    /// idempotent, so retrying the queue is always safe.
+    fn buffer_write(&mut self, interval: Interval) {
+        match self.pending_writes.iter_mut().find(|w| w.id == interval.id) {
+            Some(existing) if !existing.open && interval.open => {}
+            Some(existing) => *existing = interval,
+            None => self.pending_writes.push(interval),
+        }
+    }
+
     /// Persist engine output. Returns true if anything was written.
     fn apply(&mut self, out: StepOutput) -> bool {
         if out.is_empty() {
             return false;
         }
         let structural_open = out.persist.iter().any(|i| i.open);
+        if !out.discard.is_empty() {
+            // A discarded interval must never be re-inserted by an older buffered snapshot
+            // (that would leave a stray open row blocking every later checkpoint).
+            self.pending_writes.retain(|w| !out.discard.contains(&w.id));
+        }
         self.pending_discards.extend(out.discard);
-        self.pending_writes.extend(out.persist);
+        for interval in out.persist {
+            self.buffer_write(interval);
+        }
         if structural_open {
             // The engine just wrote the open interval; restart the checkpoint window.
             self.last_checkpoint_mono = Some(self.deps.clock.mono_ms());
@@ -449,7 +509,7 @@ impl TrackerCore {
         }
         let snapshot = open.clone();
         self.last_checkpoint_mono = Some(mono);
-        self.pending_writes.push(snapshot);
+        self.buffer_write(snapshot);
         self.flush_pending()
     }
 
@@ -472,8 +532,14 @@ impl TrackerCore {
                 self.mode = Mode::NotStarted;
             }
             (Mode::NotStarted, Mode::Running) | (Mode::Disabled, Mode::Running) => {
-                self.engine.resume();
-                self.mode = Mode::Running;
+                // A pause the user set before switching tracking off still applies.
+                match restored_pause(&self.deps.store, self.deps.clock.wall_ms()) {
+                    Some(paused) => self.mode = paused,
+                    None => {
+                        self.engine.resume();
+                        self.mode = Mode::Running;
+                    }
+                }
             }
             (Mode::NotStarted, Mode::Disabled) => self.mode = Mode::Disabled,
             (Mode::Disabled, Mode::NotStarted) => self.mode = Mode::NotStarted,
@@ -492,23 +558,31 @@ impl TrackerCore {
         self.apply(out)
     }
 
+    /// Runs on the tracker thread, so no checkpoint can race the delete. Buffered writes are
+    /// flushed first and only dropped once the delete has committed, and only those the delete
+    /// covers: a partial delete never loses recent intervals that were waiting for a retry.
     fn delete_history(&mut self, before_ms: Option<EpochMs>) -> Result<u64, String> {
-        // Make sure nothing buffered re-appears after the delete.
-        self.pending_writes.clear();
-        self.pending_discards.clear();
+        self.flush_pending();
         let deleted = self
             .deps
             .store
             .delete_events(before_ms)
             .map_err(|err| err.to_string())?;
-        if before_ms.is_none() {
-            let high_water = self
-                .deps
-                .store
-                .high_water_ms(&self.deps.device_id)
-                .map_err(|err| err.to_string())?;
-            self.engine.reset(high_water);
-            self.last_checkpoint_mono = None;
+        match before_ms {
+            None => {
+                self.pending_writes.clear();
+                self.pending_discards.clear();
+                let high_water = self
+                    .deps
+                    .store
+                    .high_water_ms(&self.deps.device_id)
+                    .map_err(|err| err.to_string())?;
+                self.engine.reset(high_water);
+                self.last_checkpoint_mono = None;
+            }
+            Some(cutoff) => self
+                .pending_writes
+                .retain(|w| w.open || w.ended_at_ms > cutoff),
         }
         Ok(deleted)
     }
@@ -596,6 +670,13 @@ impl TrackerCore {
         if events_written {
             self.deps.observer.events_changed();
         }
+    }
+}
+
+fn pause_record(until_ms: Option<EpochMs>) -> PauseRecord {
+    match until_ms {
+        Some(until) => PauseRecord::Until(until),
+        None => PauseRecord::UntilResumed,
     }
 }
 
