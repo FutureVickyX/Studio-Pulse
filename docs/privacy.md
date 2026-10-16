@@ -18,12 +18,14 @@ For each stretch of time a tracked application is in the foreground, one record 
 | End reason | `appSwitch`, `becameIdle`, `sessionAway`… | Lets you audit how an interval ended |
 | Project / task | empty in Phase 1 | Optional attribution later, always manual |
 | Sync status, revision | `pending`, `1` | Reliable sync in Phase 2 |
+| Row created / last updated (UTC) | `2026-10-13T09:15:02Z` | Bookkeeping for checkpoints and sync |
 
 Idle detection reads one number from Windows: **the time of your last keyboard or mouse input**
 (`GetLastInputInfo`). It never sees which key you pressed or where you clicked.
 
 Only applications you enable are recorded. When any other application is in the foreground,
-nothing is stored. Not even its name.
+nothing is stored. Not even its name. Applications added to the built-in list by a later update
+arrive switched off: you opt in to them in Settings › Applications.
 
 ## Never recorded
 
@@ -52,18 +54,24 @@ Nothing is uploaded. Studio Pulse has no account, no telemetry and no analytics.
 arrives in Phase 2. It will be opt-in, governed by a visible workspace policy, and shown in
 **Settings › Privacy** and **Settings › Sync** before anything leaves the device.
 
+A small diagnostic log is kept at `%LOCALAPPDATA%\com.studiopulse.desktop\logs\studio-pulse.log`
+(2 MB, replaced when full). At its default level it records when Studio Pulse starts, recovery
+counts after a crash, warnings and errors. It never contains window titles, file names, executable
+paths or which application you used. History deletion doesn't touch this file. Delete it yourself if
+you want it gone.
+
 ## You stay in control
 
 | Control | Where |
 | --- | --- |
 | See whether tracking is on | Tray icon colour and tooltip, the sidebar status pill, the compact indicator |
-| Pause for 15 minutes, 1 hour, or until resumed | Tray menu, sidebar, indicator, `Ctrl+Shift+P` |
+| Pause for 15 minutes, 1 hour, or until resumed | Tray menu, sidebar, indicator, `Ctrl+Shift+P`. A pause survives restarts: "until resumed" means exactly that. |
 | Turn tracking off entirely | Settings › Tracking › Enable tracking |
 | Choose which applications are tracked | Onboarding, Settings › Applications |
 | Hide an application from reports without deleting it | Settings › Applications › "In reports" |
 | See every stored field, row counts and the database location | Settings › Privacy |
 | Export your records (JSON or CSV) | Settings › Privacy › Export |
-| Delete history older than 30 or 90 days, or everything | Settings › Privacy › Delete history |
+| Delete history older than 30 or 90 days, or everything | Settings › Privacy › Delete history. Deleted rows are overwritten in the database file and purged from its write-ahead log, so they can't be recovered with file tools. |
 
 Tracking never starts until you finish onboarding, where these points are explained.
 

@@ -70,3 +70,5 @@ npm run build        # release build + NSIS installer
 - [docs/installation.md](docs/installation.md) covers building, installing and launch-at-login.
 - [docs/privacy.md](docs/privacy.md) lists exactly what is and isn't recorded.
 - [docs/testing.md](docs/testing.md) covers automated tests and the manual Windows checklist.
+- [Known limitations](docs/architecture.md#16-known-limitations) lists accuracy bounds and
+  deliberate trade-offs.

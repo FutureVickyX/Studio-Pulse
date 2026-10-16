@@ -177,7 +177,7 @@ For every sample:
 
 Retroactive idle relabelling only reaches back within the current open interval. If an app steals
 focus while the user is already away, up to one idle threshold can be credited to the previous
-interval as active. This is documented in the known limitations.
+interval as active. See [§16 Known limitations](#16-known-limitations).
 
 ### 4.4 Persistence cadence ("aggregation window")
 
@@ -198,7 +198,10 @@ interval as active. This is documented in the known limitations.
 | Clock jumps forward | Continuity check fails, so the jump isn't credited. |
 | Clock jumps backward | Continuity check fails; then the high-water rule holds tracking until the clock catches up. |
 | App disabled mid-session | The next sample is `untracked`, so the interval closes. |
+| Tracked app "Not Responding" | Windows shows a ghost window owned by `dwm.exe`. The probe maps it back to the hung app's window (`HungWindowFromGhostWindow`), so the freeze stays credited to that app. |
 | Tracking paused or disabled | The interval closes at the last sample; nothing is recorded until resume. |
+| Restart while paused | The pause is stored (`meta.tracker_pause`). "Pause until I resume" stays paused after a restart; a timed pause still ends at its original time. |
+| Storage temporarily failing (disk full, file locked) | Writes are buffered, one per interval, and retried every tick. Upserts are idempotent, and a discarded interval is purged from the buffer. |
 
 ---
 
@@ -206,7 +209,9 @@ interval as active. This is documented in the known limitations.
 
 Defaults live in `packages/shared-types/data/default-applications.json`, the single source shared
 by Rust (`include_str!`) and TypeScript. On first run they are seeded into the local
-`applications` table. Later releases add new built-ins without touching user edits.
+`applications` table. Later releases add new built-ins without touching user edits. Once the
+user has completed onboarding, a newly added built-in is inserted **disabled**, so an upgrade never
+starts tracking an application the user did not choose.
 
 ```jsonc
 { "id": "adobe-photoshop", "displayName": "Adobe Photoshop", "category": "photo",
@@ -260,6 +265,10 @@ Constraints: `ended_at_ms ≥ started_at_ms`; `active_ms + idle_ms = ended_at_ms
 Times are stored as UTC epoch milliseconds and exposed to the UI as ISO-8601 UTC strings. The UI
 renders them in the user's local time zone.
 
+Deletion is real: every connection sets `PRAGMA secure_delete = ON`, so freed pages are zeroed. After
+a history deletion, `PRAGMA wal_checkpoint(TRUNCATE)` empties the write-ahead log, which still held
+the pre-delete page images. A test scans the database and WAL bytes for a deleted marker.
+
 ---
 
 ## 7. Native command surface (allowlist)
@@ -268,6 +277,11 @@ The webview can call **only** these commands. `build.rs` declares them in the Ta
 and `capabilities/*.json` grants them per window. The indicator window gets a smaller set. No shell
 plugin, no fs plugin, no HTTP plugin. No command accepts a file path, SQL or a process to run from
 the UI. Export and executable picking open native dialogs **from Rust**.
+
+From Tauri's own core API the webviews get only `core:event:allow-listen` and
+`core:event:allow-unlisten`, plus `core:window:allow-start-dragging` for the indicator's drag
+region. `core:default` is deliberately not granted: it would let a script hide or relabel the tray
+icon, emit fake tracker events, or read image files by path.
 
 | Command | Args (JS) | Returns | main | indicator |
 | --- | --- | --- | :-: | :-: |
@@ -367,6 +381,8 @@ onboarding: { completed: false, completedAt: null }
 - `pauseWhenIdle = false` disables idle detection. Time without input then counts as active, which
   suits reviewing renders or playback. The settings UI says this explicitly.
 - Launch at login is **not** a stored setting. It is OS state (see §8).
+- A user pause is not a setting either, but it is persisted (`meta.tracker_pause`) and takes
+  precedence over `startAutomatically`: a restart never silently ends a pause.
 - Phase-2 settings (workspace, data sharing, sync) are listed as unavailable, with the local-only
   status shown honestly.
 
@@ -446,3 +462,22 @@ field, row counts, the database location, export (JSON/CSV) and deletion. See `d
 | D7 | npm workspaces, packages as TS source | No extra package manager, no package build step |
 | D8 | Tracking requires onboarding consent | Transparency; no covert monitoring |
 | D9 | Idle detection always on unless the user explicitly turns it off | Idle time is never silently counted as active |
+
+---
+
+## 16. Known limitations
+
+These are deliberate trade-offs or platform limits, not bugs. Each is pinned by a test or fixture
+where one is possible.
+
+| Limitation | Effect | Why / mitigation |
+| --- | --- | --- |
+| Idle relabelling reaches back only within the open interval | If another app takes focus (a render finishing, a notification) or the screen locks **before** the idle threshold is reached, the no-input time since the last input stays credited to the previous app as **active**: at most one idle threshold (default 5 min). Fixture: `focus-stolen-from-tracked-app-while-away.json`. | Closed intervals are immutable so they can be synced idempotently. A lower idle timeout reduces the window. |
+| 1 Hz sampling | Interval boundaries are accurate to about one second. Switches shorter than the minimum interval (default 2 s) are discarded as alt-tab flicker. | Simple, robust polling under heavy render load (D2). |
+| Crash or power loss | Up to one checkpoint window (default 15 s) of the open interval is lost: under-counted, never over-counted. | Lower `checkpointSeconds` (minimum 5 s) for less loss. |
+| Windows sign-out or shutdown while the app runs | Usually closed gracefully. If Windows ends the process first, the next start closes the interval at its last checkpoint (`recovered`). | Same bound as a crash. |
+| Clock moved backwards | Recording holds (`clockBehind`) until the wall clock passes the latest recorded instant, so the same instant is never counted twice. | Large manual clock changes are rare; NTP corrections are seconds. |
+| UWP apps starting or suspended | `ApplicationFrameHost.exe` without a hosted child is reported as itself and matches nothing. | None of the target creative apps are UWP. |
+| Browser-based Figma | Not detected (the browser is the foreground process). | Opt-in browser detection is a later-phase item. |
+| Automatic measurements | Foreground and active time are not billable time and are not attributed to projects automatically. | Attribution arrives with Phase 3, always as a user action. |
+
