@@ -118,7 +118,10 @@ export interface UsageSummary {
   /** Applications hidden because `includeInReports` is false (and `includeExcluded` was not set). */
   excludedApplicationIds: string[];
   intervalCount: number;
-  /** Milliseconds removed by overlap resolution; non-zero indicates corrupt or clock-skewed input. */
+  /**
+   * Milliseconds inside the range removed by overlap resolution (an instant on one device is
+   * counted once); non-zero indicates corrupt or clock-skewed input.
+   */
   overlapClippedMs: number;
 }
 

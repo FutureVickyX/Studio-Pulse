@@ -1,6 +1,8 @@
 /**
  * Application registry inputs: process matchers, `save_application` payloads and the built-in
- * defaults file. Rules mirror `apps/desktop/src-tauri/src/registry/mod.rs`.
+ * defaults file. Rules mirror `apps/desktop/src-tauri/src/registry/mod.rs` and `validation.rs`:
+ * strings are trimmed with Rust's `str::trim` semantics and lengths are counted in UTF-16 units,
+ * so the UI and the Rust core accept and reject exactly the same input.
  */
 
 import { z } from 'zod';
@@ -12,7 +14,7 @@ import type {
   ProcessMatcher,
 } from '@studio-pulse/shared-types';
 
-import { boundedText, codePointLength, runSchema } from './issues';
+import { boundedText, runSchema, textLength, trimWhiteSpace } from './issues';
 import type { ValidationResult } from './issues';
 
 /** Application ids: lowercase slug, 2–64 chars. Custom apps use `custom-<suffix>`. */
@@ -26,21 +28,28 @@ export const MAX_MATCHERS = 16;
 
 const EXE_SUFFIX = '.exe';
 
+/** Case-insensitive for ASCII only, like Rust's `eq_ignore_ascii_case` (no Unicode case folding). */
+function endsWithExe(value: string): boolean {
+  return value.slice(-EXE_SUFFIX.length).replace(/[A-Z]/g, (c) => c.toLowerCase()) === EXE_SUFFIX;
+}
+
 /**
  * Returns an error message for an invalid `exe` pattern, or null when valid.
- * Rules (checked on the trimmed value): 1–260 chars, ends with `.exe` (case-insensitive), no path
- * separators (`\` `/`), no `:`, at most 4 `*` wildcards, and at least one non-`*` character before
- * `.exe` (so `*.exe` cannot match every process).
+ * Rules (checked in this order on the trimmed value, as `validate_matcher` in
+ * `src-tauri/src/registry/validation.rs` does): 1–260 characters (UTF-16 units), no path
+ * separators (`\` `/`) and no `:`, ends with `.exe` (ASCII case-insensitive), at most 4 `*`
+ * wildcards, and at least one non-`*` character before `.exe` (so `*.exe` cannot match every
+ * process).
  */
 export function exePatternError(pattern: string): string | null {
   if (typeof pattern !== 'string') return 'must be text';
-  const value = pattern.trim();
+  const value = trimWhiteSpace(pattern);
   if (value.length === 0) return 'must not be empty';
-  if (codePointLength(value) > EXE_PATTERN_MAX_LENGTH) {
+  if (textLength(value) > EXE_PATTERN_MAX_LENGTH) {
     return `must be at most ${EXE_PATTERN_MAX_LENGTH} characters`;
   }
   if (/[\\/:]/.test(value)) return 'must be a file name only (no \\, / or :)';
-  if (!value.toLowerCase().endsWith(EXE_SUFFIX)) return 'must end with .exe';
+  if (!endsWithExe(value)) return 'must end with .exe';
   const wildcards = value.split('*').length - 1;
   if (wildcards > EXE_PATTERN_MAX_WILDCARDS) {
     return `may contain at most ${EXE_PATTERN_MAX_WILDCARDS} * wildcards`;
@@ -56,7 +65,7 @@ export function exePatternError(pattern: string): string | null {
 
 const exeSchema = z
   .string()
-  .trim()
+  .overwrite(trimWhiteSpace)
   .superRefine((value, ctx) => {
     const message = exePatternError(value);
     if (message !== null) ctx.addIssue({ code: 'custom', message });

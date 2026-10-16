@@ -57,6 +57,14 @@ describe('validateProcessMatcher', () => {
     expect(issuesOf(validateProcessMatcher({ exe: 'Designer.exe', pathIncludes: 'x'.repeat(261) }))).toEqual([
       'pathIncludes: must be at most 260 characters',
     ]);
+    expect(validateProcessMatcher({ exe: 'Designer.exe', pathIncludes: `  ${'x'.repeat(260)}  ` }).ok).toBe(true);
+  });
+
+  it('counts pathIncludes in UTF-16 units like the Rust core', () => {
+    expect(validateProcessMatcher({ exe: 'Designer.exe', pathIncludes: '📁'.repeat(130) }).ok).toBe(true); // 260 units
+    expect(issuesOf(validateProcessMatcher({ exe: 'Designer.exe', pathIncludes: '📁'.repeat(131) }))).toEqual([
+      'pathIncludes: must be at most 260 characters',
+    ]);
   });
 
   it('rejects unknown keys and non-objects', () => {
@@ -101,8 +109,27 @@ describe('validateApplicationInput', () => {
       'displayName: must be at most 80 characters',
     ]);
     expect(issuesOf(validateApplicationInput({ ...valid, displayName: '   ' }))).toEqual(['displayName: must not be empty']);
-    // Counted in characters, not UTF-16 units: 80 emoji are fine.
-    expect(validateApplicationInput({ ...valid, displayName: '🎨'.repeat(80) }).ok).toBe(true);
+  });
+
+  it('counts displayName length in UTF-16 units, exactly like the Rust core (encode_utf16)', () => {
+    // '🎨' is outside the BMP: 2 UTF-16 units. 40 of them are 80 units, 41 are 82.
+    expect(validateApplicationInput({ ...valid, displayName: '🎨'.repeat(40) }).ok).toBe(true);
+    expect(issuesOf(validateApplicationInput({ ...valid, displayName: '🎨'.repeat(41) }))).toEqual([
+      'displayName: must be at most 80 characters',
+    ]);
+    expect(validateApplicationInput({ ...valid, displayName: 'é'.repeat(80) }).ok).toBe(true); // BMP: 1 unit each
+  });
+
+  it('trims displayName with Rust str::trim semantics (Unicode White_Space)', () => {
+    const ideographic = validateApplicationInput({ ...valid, displayName: '　 SketchUp \n' });
+    expect(ideographic.ok && ideographic.value.displayName).toBe('SketchUp');
+    // U+0085 (NEL) is White_Space, so Rust trims it; JavaScript's trim() would keep it.
+    expect(issuesOf(validateApplicationInput({ ...valid, displayName: '\u0085\u0085' }))).toEqual([
+      'displayName: must not be empty',
+    ]);
+    // U+FEFF is not White_Space, so Rust keeps it; JavaScript's trim() would strip it.
+    const bom = validateApplicationInput({ ...valid, displayName: '﻿SketchUp' });
+    expect(bom.ok && bom.value.displayName).toBe('﻿SketchUp');
   });
 
   it('requires a known category', () => {

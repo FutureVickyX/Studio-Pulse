@@ -164,6 +164,37 @@ describe('summarize: data hygiene', () => {
     expectReconciled(summary);
   });
 
+  it('reports only the overlap that falls inside the range', () => {
+    const summary = summarize(
+      [
+        // Overlap entirely on 12 Oct (outside today's range): not this report's concern.
+        event({ id: 'y1', applicationId: 'figma', start: '2026-10-12T09:00:00Z', end: '2026-10-12T10:00:00Z' }),
+        event({ id: 'y2', applicationId: 'blender', start: '2026-10-12T09:30:00Z', end: '2026-10-12T10:30:00Z' }),
+        // Straddles midnight: 'inner' is fully covered by 'outer'; 30 of its 60 min fall inside today.
+        event({ id: 'outer', applicationId: 'figma', start: '2026-10-12T23:00:00Z', end: '2026-10-13T01:00:00Z' }),
+        event({ id: 'inner', applicationId: 'blender', start: '2026-10-12T23:30:00Z', end: '2026-10-13T00:30:00Z' }),
+      ],
+      { range: TODAY_UTC, applications: APPS },
+    );
+    expect(summary.overlapClippedMs).toBe(30 * MINUTE);
+    expect(summary.totals.foregroundMs).toBe(HOUR); // 'outer' from 00:00 to 01:00 only
+    expect(summary.byApplication.map((row) => row.applicationId)).toEqual(['figma']);
+    expectReconciled(summary);
+  });
+
+  it('raw in-range time minus overlapClippedMs equals the counted time', () => {
+    const events = [
+      event({ id: 'a', applicationId: 'figma', start: '2026-10-13T08:00:00Z', end: '2026-10-13T09:00:00Z' }),
+      event({ id: 'b', applicationId: 'blender', kind: 'idle', start: '2026-10-13T08:45:00Z', end: '2026-10-13T09:20:00Z' }),
+      event({ id: 'c', applicationId: 'adobe-photoshop', start: '2026-10-13T09:10:00Z', end: '2026-10-13T09:15:00Z' }),
+    ];
+    const summary = summarize(events, { range: TODAY_UTC, applications: APPS });
+    const raw = events.reduce((sum, item) => sum + Date.parse(item.endedAt) - Date.parse(item.startedAt), 0);
+    expect(summary.overlapClippedMs).toBe(15 * MINUTE + 5 * MINUTE);
+    expect(raw - summary.overlapClippedMs).toBe(summary.totals.foregroundMs);
+    expectReconciled(summary);
+  });
+
   it('does not clip overlapping intervals recorded on two different devices', () => {
     const summary = summarize(
       [

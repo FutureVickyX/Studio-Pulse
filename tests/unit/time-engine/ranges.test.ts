@@ -132,6 +132,24 @@ describe('resolveRange: DST transitions', () => {
     expect(hours(range)).toBe(30 * 24 - 1);
   });
 
+  it('Australia/Lord_Howe shifts by 30 minutes: 23.5 h and 24.5 h days', () => {
+    const springForward = resolveRange('today', { now: at('2026-10-04T06:00:00Z'), timeZone: 'Australia/Lord_Howe' });
+    expect(springForward.days).toEqual(['2026-10-04']);
+    expect(springForward.startMs).toBe(at('2026-10-03T13:30:00Z')); // 00:00 +10:30
+    expect(springForward.endMs).toBe(at('2026-10-04T13:00:00Z')); // 00:00 +11:00
+    expect(hours(springForward)).toBe(23.5);
+
+    const fallBack = resolveRange('today', { now: at('2026-04-05T06:00:00Z'), timeZone: 'Australia/Lord_Howe' });
+    expect(hours(fallBack)).toBe(24.5);
+  });
+
+  it('America/Havana springs forward at midnight: the 23 h day starts at the first existing instant', () => {
+    const range = resolveRange('today', { now: at('2026-03-08T15:00:00Z'), timeZone: 'America/Havana' });
+    expect(range.startMs).toBe(at('2026-03-08T05:00:00Z'));
+    expect(range.endMs).toBe(at('2026-03-09T04:00:00Z'));
+    expect(hours(range)).toBe(23);
+  });
+
   it('a day whose local midnight does not exist starts at the first existing instant (America/Santiago)', () => {
     // Chile springs forward at 00:00 → 01:00 on 2026-09-06.
     const range = resolveRange('today', { now: at('2026-09-06T15:00:00Z'), timeZone: 'America/Santiago' });

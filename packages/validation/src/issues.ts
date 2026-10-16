@@ -77,21 +77,36 @@ export function runSchema<T>(schema: z.ZodType<T>, input: unknown): ValidationRe
   return { ok: false, issues: [...new Set(issues)] };
 }
 
-/** Length in Unicode code points (what Rust's `str::chars().count()` reports). */
-export function codePointLength(value: string): number {
-  return Array.from(value).length;
+const EDGE_WHITE_SPACE = /^\p{White_Space}+|\p{White_Space}+$/gu;
+
+/**
+ * Trim exactly like Rust's `str::trim`, which removes characters with the Unicode `White_Space`
+ * property. JavaScript's `String.prototype.trim` differs at the edges: it also strips U+FEFF and
+ * keeps U+0085, so using it would let the UI accept names the Rust core rejects (and vice versa).
+ */
+export function trimWhiteSpace(value: string): string {
+  return value.replace(EDGE_WHITE_SPACE, '');
 }
 
 /**
- * A string that is trimmed, then required to be `min..max` code points long. The parsed value is
- * the trimmed string.
+ * Length in UTF-16 code units: JavaScript's `String.length`, and what the Rust core counts
+ * (`str::encode_utf16().count()` in `src-tauri/src/registry/validation.rs`). An emoji outside the
+ * Basic Multilingual Plane counts as 2.
+ */
+export function textLength(value: string): number {
+  return value.length;
+}
+
+/**
+ * A string that is trimmed (Rust semantics), then required to be `min..max` UTF-16 units long.
+ * The parsed value is the trimmed string.
  */
 export function boundedText(min: number, max: number) {
   return z
     .string()
-    .trim()
+    .overwrite(trimWhiteSpace)
     .superRefine((value, ctx) => {
-      const length = codePointLength(value);
+      const length = textLength(value);
       if (length < min) {
         ctx.addIssue({
           code: 'custom',

@@ -58,7 +58,17 @@ export function summarize(events: readonly TrackingEvent[], options: SummarizeOp
   const applications = new Map<string, ApplicationDefinition>();
   for (const app of options.applications) applications.set(app.id, app);
 
-  const { intervals, clippedMs } = resolveOverlaps(normalizeEvents(events));
+  const normalized = normalizeEvents(events);
+  const { intervals } = resolveOverlaps(normalized);
+
+  // Overlap removed inside the range. Overlap resolution only ever trims the start of an interval
+  // (or drops it), so the in-range time it removed is exactly raw in-range time minus resolved
+  // in-range time. Overlap outside the range does not concern this report.
+  let rawInRangeMs = 0;
+  for (const interval of normalized) {
+    rawInRangeMs += Math.max(0, Math.min(interval.endMs, range.endMs) - Math.max(interval.startMs, range.startMs));
+  }
+  let resolvedInRangeMs = 0;
 
   // Clip to the range and apply report exclusion.
   const included: NormalizedInterval[] = [];
@@ -66,6 +76,7 @@ export function summarize(events: readonly TrackingEvent[], options: SummarizeOp
   for (const interval of intervals) {
     const clipped = clipInterval(interval, range.startMs, range.endMs);
     if (!clipped) continue;
+    resolvedInRangeMs += clipped.endMs - clipped.startMs;
     const app = applications.get(clipped.applicationId);
     if (app && !app.includeInReports && !includeExcluded) {
       excluded.add(app.id);
@@ -215,6 +226,6 @@ export function summarize(events: readonly TrackingEvent[], options: SummarizeOp
     timeline,
     excludedApplicationIds: [...excluded].sort(),
     intervalCount: included.length,
-    overlapClippedMs: clippedMs,
+    overlapClippedMs: rawInRangeMs - resolvedInRangeMs,
   };
 }
