@@ -1,10 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "indicator-window",
-  "description": "Compact tracking indicator: read status, pause/resume, open the main window. No settings changes, no data deletion, no export.",
-  "windows": ["indicator"],
+  "description": "Compact tracking indicator: read status, pause/resume, open the main window. No settings changes, no data deletion, no export. Core access: event listen/unlisten and window dragging only.",
+  "windows": [
+    "indicator"
+  ],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-start-dragging",
     "allow-get-tracker-status",
     "allow-pause-tracking",
