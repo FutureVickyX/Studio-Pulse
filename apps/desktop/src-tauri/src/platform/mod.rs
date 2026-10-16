@@ -27,7 +27,8 @@ pub struct ProcessInfo {
 pub trait SystemProbe: Send {
     /// The process owning the foreground window. Returns `None` when there is no foreground window
     /// or the process can't be queried. `ApplicationFrameHost.exe` (UWP host) is resolved to the
-    /// hosted app's process.
+    /// hosted app's process, and the ghost window Windows shows for a hung app (owned by dwm.exe)
+    /// to the hung app's process, so a freeze is not reported as a switch away from the app.
     fn foreground_process(&mut self) -> Option<ProcessInfo>;
 
     /// Milliseconds since the last keyboard or mouse input, system-wide (`GetLastInputInfo`), or
