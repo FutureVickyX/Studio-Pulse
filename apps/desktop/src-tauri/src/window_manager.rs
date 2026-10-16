@@ -6,6 +6,7 @@ use tauri::{
     WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -24,6 +25,14 @@ const BLUR_CLICK_WINDOW: Duration = Duration::from_millis(400);
 
 /// When the indicator last hid itself because it lost focus.
 static LAST_BLUR_HIDE: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Whether the indicator has had keyboard focus since it was last shown.
+static INDICATOR_HAD_FOCUS: AtomicBool = AtomicBool::new(false);
+
+/// Whether losing focus dismisses the indicator. True when the user opened it from the tray (a
+/// popover). False when it was shown at sign-in: focus moves around while Windows starts up, so
+/// it stays on screen until the user closes it (×, Escape, Open Studio Pulse or the tray icon).
+static DISMISS_ON_BLUR: AtomicBool = AtomicBool::new(true);
 
 fn hidden_by_blur_just_now() -> bool {
     LAST_BLUR_HIDE
@@ -58,7 +67,7 @@ pub fn apply_startup_view<R: Runtime>(app: &AppHandle<R>, view: StartupView) {
     match view {
         StartupView::TrayOnly => {}
         StartupView::Main => show_main(app),
-        StartupView::Indicator => show_indicator(app, None),
+        StartupView::Indicator => show_indicator(app, None, false),
     }
 }
 
@@ -111,7 +120,7 @@ pub fn toggle_indicator<R: Runtime>(app: &AppHandle<R>, anchor: Option<Rect>) {
             return;
         }
     }
-    show_indicator(app, anchor);
+    show_indicator(app, anchor, true);
 }
 
 fn indicator_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
@@ -139,13 +148,18 @@ fn indicator_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> 
     match built {
         Ok(window) => {
             let handle = window.clone();
-            window.on_window_event(move |event| {
-                if let WindowEvent::Focused(false) = event {
+            window.on_window_event(move |event| match event {
+                WindowEvent::Focused(true) => INDICATOR_HAD_FOCUS.store(true, Ordering::SeqCst),
+                WindowEvent::Focused(false)
+                    if INDICATOR_HAD_FOCUS.swap(false, Ordering::SeqCst)
+                        && DISMISS_ON_BLUR.load(Ordering::SeqCst) =>
+                {
                     if let Ok(mut last) = LAST_BLUR_HIDE.lock() {
                         *last = Some(Instant::now());
                     }
                     let _ = handle.hide();
                 }
+                _ => {}
             });
             Some(window)
         }
@@ -158,13 +172,16 @@ fn indicator_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> 
 
 /// Show the indicator. With an anchor (tray icon rectangle) it sits just above the icon;
 /// otherwise in the bottom-right corner of the primary monitor's work area.
-pub fn show_indicator<R: Runtime>(app: &AppHandle<R>, anchor: Option<Rect>) {
+/// `dismiss_on_blur`: hide when it loses focus (tray popover) or stay until closed (sign-in).
+pub fn show_indicator<R: Runtime>(app: &AppHandle<R>, anchor: Option<Rect>, dismiss_on_blur: bool) {
     let Some(window) = indicator_window(app) else {
         return;
     };
     if let Some(position) = indicator_position(&window, anchor) {
         let _ = window.set_position(position);
     }
+    INDICATOR_HAD_FOCUS.store(false, Ordering::SeqCst);
+    DISMISS_ON_BLUR.store(dismiss_on_blur, Ordering::SeqCst);
     let _ = window.show();
     let _ = window.set_focus();
 }
