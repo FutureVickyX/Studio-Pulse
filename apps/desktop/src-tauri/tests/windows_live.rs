@@ -5,28 +5,37 @@
 //! cargo test --test windows_live -- --ignored --test-threads=1
 //! ```
 //!
-//! Nothing here reads window titles: windows are only mapped to the pids that own them.
+//! Nothing here reads window titles: windows are only mapped to the pids that own them, and a
+//! ghost window to the hung window it stands in for.
 #![cfg(windows)]
 
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::{Child, Command};
-use std::thread::sleep;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread::{self, sleep, JoinHandle};
 use std::time::{Duration, Instant};
 
 use studio_pulse_lib::platform::{create_probe, process_info, running_applications};
 use studio_pulse_lib::tracker::SessionState;
-use windows::core::BOOL;
+use windows::core::{s, w, BOOL};
 use windows::Win32::Foundation::{HWND, LPARAM, TRUE};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
-    SetForegroundWindow,
+    BringWindowToTop, CreateWindowExW, DestroyWindow, DispatchMessageW, EnumWindows,
+    GetForegroundWindow, GetWindowThreadProcessId, IsHungAppWindow, IsWindowVisible, PeekMessageW,
+    SetForegroundWindow, ShowWindow, TranslateMessage, CW_USEDEFAULT, MSG, PM_REMOVE,
+    SW_SHOWNORMAL, WINDOW_EX_STYLE, WS_OVERLAPPEDWINDOW,
 };
 
 const THIRTY_DAYS_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
 /// A classic Win32 app that ships with every Windows 10/11 install and opens a normal window.
 const GUI_CHILD: &str = r"C:\Windows\System32\charmap.exe";
 const WINDOW_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long the test window's thread stops pumping messages. Windows declares a window hung
+/// after about 5 s without a message being processed, and only then puts a ghost in its place.
+const FREEZE: Duration = Duration::from_secs(8);
 
 // ---- helpers ----------------------------------------------------------------------------------
 
@@ -100,6 +109,180 @@ fn own_exe_name() -> String {
         .and_then(|name| name.to_str())
         .expect("utf-8 exe name")
         .to_string()
+}
+
+/// Waits until `hwnd` is the foreground window.
+fn wait_for_foreground(hwnd: HWND, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if foreground_window() == Some(hwnd) {
+            return true;
+        }
+        sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+/// `user32!HungWindowFromGhostWindow` (exported by name, absent from the SDK headers): the hung
+/// window that `ghost` stands in for, or `None` when `ghost` is not a ghost window. The test's
+/// own oracle for "the foreground window is our window's ghost".
+fn hung_window_of_ghost(ghost: HWND) -> Option<HWND> {
+    type HungWindowFromGhostWindowFn = unsafe extern "system" fn(HWND) -> HWND;
+    // SAFETY: user32.dll is loaded in this process (statically imported) and never unloaded.
+    let user32 = unsafe { GetModuleHandleW(w!("user32.dll")) }.ok()?;
+    // SAFETY: valid module handle and a NUL-terminated ANSI name.
+    let export = unsafe { GetProcAddress(user32, s!("HungWindowFromGhostWindow")) }?;
+    // SAFETY: the export's signature is `HWND WINAPI HungWindowFromGhostWindow(HWND)`, and
+    // `HWND` is `#[repr(transparent)]` over a pointer, so only the static signature changes.
+    let hung_window_from_ghost = unsafe {
+        std::mem::transmute::<unsafe extern "system" fn() -> isize, HungWindowFromGhostWindowFn>(
+            export,
+        )
+    };
+    // SAFETY: the function only looks the handle up; any handle value is acceptable.
+    let hung = unsafe { hung_window_from_ghost(ghost) };
+    (!hung.is_invalid()).then_some(hung)
+}
+
+enum WindowCommand {
+    /// Stop pumping messages for this long, as a busy app does.
+    Freeze(Duration),
+    Quit,
+}
+
+/// A visible top-level window owned by a helper thread that pumps its messages until told to
+/// freeze. Dropping it ends the thread and destroys the window.
+struct FreezableWindow {
+    hwnd: HWND,
+    commands: mpsc::Sender<WindowCommand>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl FreezableWindow {
+    /// Creates the window, shown and (if Windows allows it) in the foreground. `None` if no
+    /// window could be created.
+    fn open() -> Option<Self> {
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (commands, commands_rx) = mpsc::channel();
+        let thread = thread::spawn(move || run_window_thread(&ready_tx, &commands_rx));
+        // Window handles are not `Send`; the helper sends the handle value.
+        let hwnd = ready_rx
+            .recv()
+            .ok()
+            .flatten()
+            .map(|hwnd| HWND(hwnd as *mut _));
+        let window = Self {
+            hwnd: hwnd.unwrap_or_default(),
+            commands,
+            thread: Some(thread),
+        };
+        hwnd.is_some().then_some(window)
+    }
+
+    fn freeze(&self, duration: Duration) {
+        self.commands
+            .send(WindowCommand::Freeze(duration))
+            .expect("window thread is running");
+    }
+}
+
+impl Drop for FreezableWindow {
+    fn drop(&mut self) {
+        let _ = self.commands.send(WindowCommand::Quit);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+fn run_window_thread(
+    ready: &mpsc::Sender<Option<isize>>,
+    commands: &mpsc::Receiver<WindowCommand>,
+) {
+    let Some(hwnd) = create_test_window() else {
+        let _ = ready.send(None);
+        return;
+    };
+    bring_to_front(hwnd);
+    let _ = ready.send(Some(hwnd.0 as isize));
+    loop {
+        pump_messages();
+        match commands.recv_timeout(Duration::from_millis(10)) {
+            // Sleeping without pumping is exactly what a busy UI thread looks like to Windows.
+            Ok(WindowCommand::Freeze(duration)) => sleep(duration),
+            Ok(WindowCommand::Quit) | Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    }
+    // SAFETY: the window was created by this thread, which is the only one allowed to destroy it.
+    let _ = unsafe { DestroyWindow(hwnd) };
+    pump_messages();
+}
+
+/// A captioned, still hidden top-level window of the system "STATIC" class, owned by the
+/// calling thread.
+fn create_test_window() -> Option<HWND> {
+    // SAFETY: `None` asks for this executable's module handle; there is nothing to release.
+    let module = unsafe { GetModuleHandleW(None) }.ok()?;
+    // SAFETY: "STATIC" is a system class registered in every GUI process; every other argument
+    // is a plain value or null. The window belongs to the calling thread.
+    unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("STATIC"),
+            w!("Studio Pulse hung-window test"),
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            480,
+            240,
+            None,
+            None,
+            Some(module.into()),
+            None,
+        )
+    }
+    .ok()
+}
+
+/// Asks Windows to put `hwnd` (owned by the calling thread) in the foreground.
+fn bring_to_front(hwnd: HWND) {
+    // SAFETY: plain calls on a window this thread owns; failure is harmless.
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
+        if SetForegroundWindow(hwnd).as_bool() && foreground_window() == Some(hwnd) {
+            return;
+        }
+    }
+    // Focus-stealing prevention refuses a process that is not in the foreground. Sharing input
+    // state with the foreground window's thread for the duration of one call lifts that.
+    let Some(foreground) = foreground_window() else {
+        return;
+    };
+    // SAFETY: plain calls; the input attachment is undone before returning, so the freeze
+    // that follows never stalls the other thread's input.
+    unsafe {
+        let theirs = GetWindowThreadProcessId(foreground, None);
+        let ours = GetCurrentThreadId();
+        if theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true).as_bool() {
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetForegroundWindow(hwnd);
+            let _ = AttachThreadInput(ours, theirs, false);
+        }
+    }
+}
+
+/// Dispatches every queued message of the calling thread.
+fn pump_messages() {
+    let mut msg = MSG::default();
+    // SAFETY: `msg` is a valid out-buffer and is only dispatched on the thread that received it.
+    while unsafe { PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE) }.as_bool() {
+        // SAFETY: as above.
+        unsafe {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
 }
 
 // ---- tests ------------------------------------------------------------------------------------
@@ -291,4 +474,100 @@ fn spawned_gui_process_is_resolved_and_listed() {
             .is_none_or(|info| !info.exe_name.eq_ignore_ascii_case("charmap.exe")),
         "{after:?}"
     );
+}
+
+#[test]
+#[ignore = "needs an interactive Windows desktop; takes the focus and freezes a window for ~8 s"]
+fn hung_foreground_window_and_its_ghost_are_reported_as_its_app() {
+    let own_pid = std::process::id();
+    let own_exe = own_exe_name();
+    let window = FreezableWindow::open().expect("create a top-level test window");
+    if !wait_for_foreground(window.hwnd, Duration::from_secs(3)) {
+        eprintln!("Windows kept the test window in the background; hung-window check skipped");
+        return;
+    }
+    let mut probe = create_probe();
+    let before = probe
+        .foreground_process()
+        .expect("probe resolves the focused test window");
+    assert_eq!(before.pid, own_pid, "{before:?}");
+
+    window.freeze(FREEZE);
+    let frozen_at = Instant::now();
+    let (mut samples, mut hung_samples, mut ghost_samples) = (0, 0, 0);
+    let mut focus_lost = false;
+    while frozen_at.elapsed() + Duration::from_millis(500) < FREEZE {
+        sleep(Duration::from_millis(200));
+        let Some(foreground) = foreground_window() else {
+            continue;
+        };
+        let reported = probe.foreground_process();
+        if foreground_window() != Some(foreground) {
+            continue; // the foreground changed mid-sample; judge the next one
+        }
+        let is_ghost =
+            foreground != window.hwnd && hung_window_of_ghost(foreground) == Some(window.hwnd);
+        if foreground != window.hwnd && !is_ghost {
+            eprintln!(
+                "after {:?} of freeze another window took the foreground ({:?})",
+                frozen_at.elapsed(),
+                reported.map(|app| app.exe_name),
+            );
+            focus_lost = true;
+            break;
+        }
+        // SAFETY: plain query; it sends no message, so it never blocks on the frozen thread.
+        let hung = unsafe { IsHungAppWindow(window.hwnd) }.as_bool();
+        let what = if is_ghost {
+            format!("its ghost (owned by pid {:?})", window_pid(foreground))
+        } else {
+            format!("the test window itself (hung: {hung})")
+        };
+        let reported = reported.unwrap_or_else(|| {
+            panic!(
+                "after {:?} of freeze the foreground is {what} but the probe reported nothing",
+                frozen_at.elapsed()
+            )
+        });
+        assert_eq!(
+            reported.pid,
+            own_pid,
+            "after {:?} of freeze the foreground is {what} but the probe reported {reported:?}",
+            frozen_at.elapsed()
+        );
+        assert!(
+            reported.exe_name.eq_ignore_ascii_case(&own_exe),
+            "{reported:?}"
+        );
+        samples += 1;
+        hung_samples += usize::from(hung);
+        ghost_samples += usize::from(is_ghost);
+    }
+    eprintln!(
+        "{samples} sample(s) during the freeze: {hung_samples} with the window hung, \
+         {ghost_samples} with its ghost in the foreground"
+    );
+    if focus_lost {
+        eprintln!("another window took the foreground during the freeze; rest of check skipped");
+        return;
+    }
+    assert!(
+        hung_samples > 0,
+        "Windows never reported the frozen window as hung; the freeze did not take effect"
+    );
+    assert!(
+        ghost_samples > 0,
+        "Windows never put a ghost in place of the hung foreground window, so the ghost path \
+         was not exercised (is window ghosting disabled?)"
+    );
+
+    // Once the thread pumps again Windows retires the ghost and the window itself comes back.
+    if wait_for_foreground(window.hwnd, FREEZE) {
+        let after = probe
+            .foreground_process()
+            .expect("probe resolves the recovered window");
+        assert_eq!(after.pid, own_pid, "{after:?}");
+    } else {
+        eprintln!("the recovered window did not return to the foreground; recovery check skipped");
+    }
 }

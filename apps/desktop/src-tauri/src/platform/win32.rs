@@ -3,12 +3,22 @@
 //! APIs: `GetForegroundWindow`, `GetWindowThreadProcessId`, `EnumChildWindows` (UWP host
 //! resolution), `OpenProcess` (`PROCESS_QUERY_LIMITED_INFORMATION` only), `GetProcessTimes`,
 //! `QueryFullProcessImageNameW`, `GetLastInputInfo`, `WTSQuerySessionInformationW(WTSSessionInfoEx)`,
-//! `SystemParametersInfoW(SPI_GETSCREENSAVERRUNNING)`, and for the running-application picker
-//! `EnumWindows`, `IsWindowVisible`, `GetWindow(GW_OWNER)`, `GetWindowLongW(GWL_EXSTYLE)` and
-//! `DwmGetWindowAttribute(DWMWA_CLOAKED)`.
+//! `SystemParametersInfoW(SPI_GETSCREENSAVERRUNNING)`; for hung-window ghosts
+//! `HungWindowFromGhostWindow` (exported by name from user32.dll but absent from the SDK headers,
+//! so resolved once with `GetModuleHandleW` + `GetProcAddress`), `IsWindow`, `IsHungAppWindow`,
+//! and `CreateToolhelp32Snapshot` + `Process32FirstW`/`Process32NextW` (the image name of a
+//! foreground process that `OpenProcess` refuses, such as dwm.exe); and for the
+//! running-application picker `EnumWindows`, `IsWindowVisible`, `GetWindow(GW_OWNER)`,
+//! `GetWindowLongW(GWL_EXSTYLE)` and `DwmGetWindowAttribute(DWMWA_CLOAKED)`.
+//!
+//! Hung windows: when an app stops pumping messages for about five seconds (a large save, a heavy
+//! render, a bake), Windows hides its top-level window and shows a "ghost" window owned by dwm.exe
+//! in its place, and the ghost becomes the foreground window. The probe maps the ghost back to the
+//! hung window, so a freeze reads as more time in the app rather than a switch away from it.
 //!
 //! Privacy: nothing here reads window titles, class names, window contents, keystrokes or the
-//! clipboard. A window handle is only ever used to find the process that owns it.
+//! clipboard. A window handle is only ever used to find the process that owns it, or (for a
+//! ghost) the window it stands in for.
 //!
 //! Every `unsafe` block is a single FFI call (or a read of memory the OS just handed us) and
 //! carries a `SAFETY:` note. No Rust panic can unwind across the enumeration callbacks: they only
@@ -18,11 +28,15 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::mem::size_of;
 
-use windows::core::{BOOL, PWSTR};
+use windows::core::{s, w, BOOL, PWSTR};
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_INSUFFICIENT_BUFFER, FALSE, FILETIME, HANDLE, HWND, LPARAM, TRUE,
 };
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::RemoteDesktop::{
     WTSActive, WTSFreeMemory, WTSQuerySessionInformationW, WTSSessionInfoEx, WTSINFOEXW,
     WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, WTS_SESSIONSTATE_LOCK, WTS_SESSIONSTATE_UNLOCK,
@@ -35,8 +49,9 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumChildWindows, EnumWindows, GetForegroundWindow, GetWindow, GetWindowLongW,
-    GetWindowThreadProcessId, IsWindowVisible, SystemParametersInfoW, GWL_EXSTYLE, GW_OWNER,
-    SPI_GETSCREENSAVERRUNNING, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WS_EX_TOOLWINDOW,
+    GetWindowThreadProcessId, IsHungAppWindow, IsWindow, IsWindowVisible, SystemParametersInfoW,
+    GWL_EXSTYLE, GW_OWNER, SPI_GETSCREENSAVERRUNNING, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    WS_EX_TOOLWINDOW,
 };
 
 use super::{exe_name_from_path, ProcessInfo, SystemProbe};
@@ -44,6 +59,8 @@ use crate::tracker::SessionState;
 
 /// Image name of the UWP frame host. Its windows belong to the hosted app's process.
 const FRAME_HOST_EXE: &str = "ApplicationFrameHost.exe";
+/// Image name of the Desktop Window Manager, which owns the ghost of a hung window.
+const GHOST_HOST_EXE: &str = "dwm.exe";
 /// Image name of the Windows lock screen app.
 const LOCK_APP_EXE: &str = "LockApp.exe";
 /// Initial image-path buffer, in UTF-16 units. Most paths fit; longer ones grow the buffer.
@@ -51,18 +68,28 @@ const INITIAL_PATH_CAPACITY: usize = 512;
 /// Upper bound for the image-path buffer: the longest path an NT `UNICODE_STRING` can hold.
 const MAX_PATH_CAPACITY: usize = 32_768;
 
+/// `user32!HungWindowFromGhostWindow`: the hung window a ghost window stands in for, or null when
+/// the argument is not a ghost.
+type HungWindowFromGhostWindowFn = unsafe extern "system" fn(HWND) -> HWND;
+
 /// Win32 [`SystemProbe`]. Keeps a small cache so that, while the same window of the same process
 /// stays in the foreground, each poll costs one `OpenProcess` + `GetProcessTimes` instead of a
 /// full image-path query.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Win32Probe {
-    /// The process owning the foreground window, as last resolved.
+    /// The process owning the foreground window, as last resolved. Never dwm.exe: while a ghost
+    /// is in the foreground this keeps the hung app's entry.
     foreground: Option<CachedProcess>,
     /// The app process hosted by an `ApplicationFrameHost.exe` foreground window, as last resolved.
     hosted: Option<CachedProcess>,
     /// The last (window, pid) that could not be queried. Focusing an elevated or protected window
     /// fails every second; this keeps the debug log to one line per occurrence.
     last_failure: Option<(isize, u32)>,
+    /// The foreground (window, pid) last identified as a dwm.exe ghost. While it stays in the
+    /// foreground its owner is not looked up again.
+    ghost: Option<(isize, u32)>,
+    /// `HungWindowFromGhostWindow`, resolved once; `None` if this Windows build lacks the export.
+    hung_window_from_ghost: Option<HungWindowFromGhostWindowFn>,
 }
 
 /// Cache entry: valid while the window handle, the pid and the process creation time all match.
@@ -75,22 +102,88 @@ struct CachedProcess {
     info: ProcessInfo,
 }
 
+impl Default for Win32Probe {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Win32Probe {
     /// A probe with an empty cache.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            foreground: None,
+            hosted: None,
+            last_failure: None,
+            ghost: None,
+            hung_window_from_ghost: load_hung_window_from_ghost(),
+        }
     }
 
     /// The foreground window's process, with `ApplicationFrameHost.exe` resolved to the hosted
-    /// UWP app.
+    /// UWP app and a dwm.exe ghost resolved to the hung window it replaces.
     fn query_foreground(&mut self) -> Option<ProcessInfo> {
         // SAFETY: no arguments; returns a possibly-null window handle.
         let hwnd = unsafe { GetForegroundWindow() };
+        self.query_top_level(hwnd)
+    }
+
+    /// [`query_foreground`](Self::query_foreground) for the top-level window `hwnd`.
+    fn query_top_level(&mut self, hwnd: HWND) -> Option<ProcessInfo> {
         if hwnd.is_invalid() {
             return None;
         }
         let pid = window_pid(hwnd)?;
+        let key = hwnd_key(hwnd);
+        if self.ghost == Some((key, pid)) {
+            return self.query_ghost(hwnd);
+        }
+        // Another window's entry is set aside instead of evicted: if this window is a ghost, that
+        // entry belongs to the hung app and goes back into the slot.
+        let previous = self
+            .foreground
+            .take_if(|cached| cached.hwnd != key || cached.pid != pid);
+        let failed_before = self.last_failure == Some((key, pid));
+        let top = Self::resolve(&mut self.foreground, &mut self.last_failure, hwnd, pid);
+        let ghost_host = match &top {
+            Some(top) => is_ghost_host(&top.exe_name),
+            // Without elevation dwm.exe cannot be opened, so read its name from a process
+            // snapshot instead: once per window, not on every poll of an elevated window.
+            None => !failed_before && snapshot_exe_name(pid).is_some_and(|n| is_ghost_host(&n)),
+        };
+        if ghost_host {
+            self.foreground = previous;
+            self.ghost = Some((key, pid));
+            log::debug!("foreground window is a dwm.exe ghost; looking for the hung window");
+            return self.query_ghost(hwnd);
+        }
+        self.ghost = None;
+        match top {
+            Some(top) => self.resolve_frame_host(hwnd, pid, top),
+            None => {
+                // Nothing new to cache: keep the previous entry for when its window returns.
+                if self.foreground.is_none() {
+                    self.foreground = previous;
+                }
+                None
+            }
+        }
+    }
+
+    /// The app behind the top-level window `hwnd` owned by `pid`: the normal, non-ghost path.
+    fn query_window(&mut self, hwnd: HWND, pid: u32) -> Option<ProcessInfo> {
         let top = Self::resolve(&mut self.foreground, &mut self.last_failure, hwnd, pid)?;
+        self.resolve_frame_host(hwnd, pid, top)
+    }
+
+    /// `top` (the owner of `hwnd`), unless it is `ApplicationFrameHost.exe`: then the UWP app it
+    /// hosts.
+    fn resolve_frame_host(
+        &mut self,
+        hwnd: HWND,
+        pid: u32,
+        top: ProcessInfo,
+    ) -> Option<ProcessInfo> {
         if !is_frame_host(&top) {
             self.hosted = None;
             return Some(top);
@@ -104,6 +197,27 @@ impl Win32Probe {
             }
             None => Some(top),
         }
+    }
+
+    /// The app behind the dwm.exe ghost window `ghost`, served from the cache entries of the hung
+    /// window it replaces. `None` when the hung window cannot be found.
+    fn query_ghost(&mut self, ghost: HWND) -> Option<ProcessInfo> {
+        let mapped = self
+            .hung_window_from_ghost
+            .and_then(|hung_window_from_ghost| {
+                // SAFETY: the pointer is user32's `HungWindowFromGhostWindow` (see
+                // `load_hung_window_from_ghost`), which only looks the handle up and returns null
+                // for anything that is not a live ghost window.
+                let hung = unsafe { hung_window_from_ghost(ghost) };
+                (!hung.is_invalid()).then(|| hwnd_key(hung))
+            });
+        let cached = self.foreground.as_ref().map(|cached| cached.hwnd);
+        let target = ghost_target(hwnd_key(ghost), mapped, cached, |window| {
+            is_hung_window(hwnd_from_key(window))
+        })?;
+        let hwnd = hwnd_from_key(target);
+        let pid = window_pid(hwnd)?;
+        self.query_window(hwnd, pid)
     }
 
     /// Resolve `pid` (owner of `hwnd`) through `slot`, re-querying the image path only when the
@@ -120,8 +234,9 @@ impl Win32Probe {
             Err(err) => {
                 *slot = None;
                 if *last_failure != Some((key, pid)) {
-                    // Expected whenever an elevated or protected window has focus, or the
-                    // process exits between the two calls. Not an error.
+                    // Expected whenever an elevated or protected window has focus, a ghost window
+                    // (dwm.exe) does while we run unelevated, or the process exits between the
+                    // two calls. Not an error.
                     log::debug!("foreground process {pid} cannot be queried: {err}");
                     *last_failure = Some((key, pid));
                 }
@@ -329,6 +444,50 @@ impl Drop for ProcessHandle {
     }
 }
 
+/// A Toolhelp snapshot handle, closed on drop.
+struct Snapshot(HANDLE);
+
+impl Drop for Snapshot {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from a successful CreateToolhelp32Snapshot and is closed
+        // exactly once here.
+        if let Err(err) = unsafe { CloseHandle(self.0) } {
+            log::debug!("CloseHandle failed: {err}");
+        }
+    }
+}
+
+/// The image file name of `pid` (e.g. `dwm.exe`) from a process snapshot, which needs no access
+/// to the process itself. For processes `OpenProcess` refuses; costs one snapshot of the process
+/// list, so callers use it once per window, not once per poll.
+fn snapshot_exe_name(pid: u32) -> Option<String> {
+    // SAFETY: plain FFI call; the returned handle is owned by `Snapshot` and closed on drop.
+    let snapshot = match unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) } {
+        Ok(handle) => Snapshot(handle),
+        Err(err) => {
+            log::debug!("CreateToolhelp32Snapshot failed: {err}");
+            return None;
+        }
+    };
+    let mut entry = PROCESSENTRY32W {
+        dwSize: size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: `snapshot.0` is a live process snapshot; `entry` is a valid PROCESSENTRY32W with
+    // `dwSize` set, as the API requires.
+    let mut found = unsafe { Process32FirstW(snapshot.0, &mut entry) };
+    while found.is_ok() {
+        if entry.th32ProcessID == pid {
+            let name = &entry.szExeFile;
+            let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+            return Some(String::from_utf16_lossy(&name[..len]));
+        }
+        // SAFETY: as for Process32FirstW.
+        found = unsafe { Process32NextW(snapshot.0, &mut entry) };
+    }
+    None
+}
+
 fn process_info_from_path(pid: u32, exe_path: String) -> ProcessInfo {
     ProcessInfo {
         pid,
@@ -341,11 +500,77 @@ fn is_frame_host(process: &ProcessInfo) -> bool {
     process.exe_name.eq_ignore_ascii_case(FRAME_HOST_EXE)
 }
 
+/// Whether `exe_name` is the process that owns ghost windows (dwm.exe), case-insensitively.
+fn is_ghost_host(exe_name: &str) -> bool {
+    exe_name.eq_ignore_ascii_case(GHOST_HOST_EXE)
+}
+
+// ---- hung windows -----------------------------------------------------------------------------
+
+/// Resolve `user32!HungWindowFromGhostWindow`. It has been exported by name since Windows Vista
+/// but is in neither the SDK headers nor the `windows` crate. `None` if it cannot be found.
+fn load_hung_window_from_ghost() -> Option<HungWindowFromGhostWindowFn> {
+    // SAFETY: plain FFI call. user32.dll is already loaded (this binary imports it, e.g. for
+    // GetForegroundWindow), so the handle is valid and stays valid for the life of the process;
+    // GetModuleHandleW takes no reference that would need releasing.
+    let user32 = match unsafe { GetModuleHandleW(w!("user32.dll")) } {
+        Ok(module) => module,
+        Err(err) => {
+            log::debug!("user32.dll handle unavailable: {err}");
+            return None;
+        }
+    };
+    // SAFETY: `user32` is a valid module handle and the name is a NUL-terminated ANSI literal.
+    let Some(export) = (unsafe { GetProcAddress(user32, s!("HungWindowFromGhostWindow")) }) else {
+        log::debug!("user32.dll does not export HungWindowFromGhostWindow");
+        return None;
+    };
+    // SAFETY: the export's real signature is `HWND WINAPI HungWindowFromGhostWindow(HWND)`, the
+    // `extern "system"` ABI with one pointer-sized argument and a pointer-sized result; `HWND` is
+    // `#[repr(transparent)]` over a pointer. The transmute only restores that signature on a
+    // function pointer of the same size, and user32.dll is never unloaded (see above).
+    Some(unsafe {
+        std::mem::transmute::<unsafe extern "system" fn() -> isize, HungWindowFromGhostWindowFn>(
+            export,
+        )
+    })
+}
+
+/// Whether `hwnd` still exists and Windows considers it not responding (no message processed
+/// for about five seconds).
+fn is_hung_window(hwnd: HWND) -> bool {
+    // SAFETY: plain queries on a window handle; a stale handle yields FALSE. Neither call sends
+    // a message to the window, so neither blocks on a hung thread.
+    unsafe { IsWindow(Some(hwnd)).as_bool() && IsHungAppWindow(hwnd).as_bool() }
+}
+
+/// The window to report for the ghost `ghost` (all handles as plain integers): the hung window
+/// user32 `mapped` it to; or, when that mapping is unavailable or empty, the `cached` foreground
+/// window if `is_hung` says it still exists and is not responding; otherwise none. `is_hung` is
+/// only consulted for the fallback.
+fn ghost_target(
+    ghost: isize,
+    mapped: Option<isize>,
+    cached: Option<isize>,
+    is_hung: impl FnOnce(isize) -> bool,
+) -> Option<isize> {
+    let usable = |window: &isize| *window != 0 && *window != ghost;
+    match mapped.filter(usable) {
+        Some(hung) => Some(hung),
+        None => cached.filter(usable).filter(|&window| is_hung(window)),
+    }
+}
+
 // ---- windows ----------------------------------------------------------------------------------
 
 /// A window handle as a plain integer, for cache keys (`HWND` itself is not `Send`).
 fn hwnd_key(hwnd: HWND) -> isize {
     hwnd.0 as isize
+}
+
+/// The window handle a [`hwnd_key`] was made from.
+fn hwnd_from_key(key: isize) -> HWND {
+    HWND(key as *mut c_void)
 }
 
 /// The pid owning `hwnd`, or `None` if the window is gone.
@@ -585,6 +810,16 @@ fn classify_session(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, DispatchMessageW, PeekMessageW, ShowWindow,
+        TranslateMessage, CW_USEDEFAULT, MSG, PM_REMOVE, SW_SHOWNOACTIVATE, WINDOW_EX_STYLE,
+        WS_OVERLAPPEDWINDOW,
+    };
+
     use super::*;
 
     const UNLOCKED: WtsSession = WtsSession {
@@ -670,11 +905,254 @@ mod tests {
     }
 
     #[test]
+    fn ghost_host_is_dwm_compared_case_insensitively() {
+        assert!(is_ghost_host("dwm.exe"));
+        assert!(is_ghost_host("DWM.EXE"));
+        assert!(is_ghost_host("Dwm.Exe"));
+        assert!(!is_ghost_host("dwm"));
+        assert!(!is_ghost_host("notdwm.exe"));
+        assert!(!is_ghost_host("dwm.exe.bak"));
+        assert!(!is_ghost_host(""));
+        assert!(!is_ghost_host(FRAME_HOST_EXE));
+        assert!(!is_ghost_host("Photoshop.exe"));
+    }
+
+    const GHOST: isize = 0x1_0010;
+    const HUNG: isize = 0x1_0020;
+    const CACHED: isize = 0x1_0030;
+
+    #[test]
+    fn ghost_target_prefers_the_window_user32_maps_it_to() {
+        let never = |_: isize| -> bool { panic!("fallback consulted although the mapping worked") };
+        // The mapping is authoritative, even over a different cached window (the user switched
+        // apps before the freeze).
+        assert_eq!(
+            ghost_target(GHOST, Some(HUNG), Some(CACHED), never),
+            Some(HUNG)
+        );
+        assert_eq!(ghost_target(GHOST, Some(HUNG), None, never), Some(HUNG));
+    }
+
+    #[test]
+    fn ghost_target_falls_back_to_the_cached_window_only_while_it_is_hung() {
+        // Export missing (None), returned null (0), or returned nonsense (the ghost itself).
+        for mapped in [None, Some(0), Some(GHOST)] {
+            let hung_cached = |window: isize| {
+                assert_eq!(window, CACHED, "only the cached window is examined");
+                true
+            };
+            assert_eq!(
+                ghost_target(GHOST, mapped, Some(CACHED), hung_cached),
+                Some(CACHED),
+                "{mapped:?}"
+            );
+            // Responding again or destroyed: the ghost is not attributed to it.
+            assert_eq!(ghost_target(GHOST, mapped, Some(CACHED), |_| false), None);
+            // Nothing cached (first poll ever was the ghost).
+            assert_eq!(ghost_target(GHOST, mapped, None, |_| true), None);
+            // Never the ghost itself or a null handle.
+            assert_eq!(ghost_target(GHOST, mapped, Some(GHOST), |_| true), None);
+            assert_eq!(ghost_target(GHOST, mapped, Some(0), |_| true), None);
+        }
+    }
+
+    #[test]
+    fn hung_window_export_is_resolved_and_ignores_non_ghosts() {
+        // Exported by every supported Windows (10 and 11).
+        let hung_window_from_ghost =
+            load_hung_window_from_ghost().expect("user32 exports HungWindowFromGhostWindow");
+        // SAFETY: the resolved export accepts any handle value; null is not a ghost.
+        let hung = unsafe { hung_window_from_ghost(HWND::default()) };
+        assert!(hung.is_invalid());
+        assert!(Win32Probe::new().hung_window_from_ghost.is_some());
+        assert!(!is_hung_window(HWND::default()));
+    }
+
+    #[test]
+    fn snapshot_names_processes_without_opening_them() {
+        let exe = std::env::current_exe().expect("current exe");
+        let expected = exe.file_name().and_then(|name| name.to_str()).unwrap_or("");
+        let name = snapshot_exe_name(std::process::id()).expect("own pid is in the snapshot");
+        assert!(name.eq_ignore_ascii_case(expected), "{name} vs {expected}");
+        // Pids are multiples of 4; this one never exists.
+        assert_eq!(snapshot_exe_name(u32::MAX - 2), None);
+    }
+
+    #[test]
     fn idle_and_session_queries_do_not_panic() {
         let mut probe = Win32Probe::new();
         let _ = probe.idle_ms();
         let _ = probe.session_state();
         let _ = probe.foreground_process();
         let _ = probe.foreground_process();
+    }
+
+    // ---- live ghost check (no focus needed) ---------------------------------------------------
+
+    /// A shown but not activated top-level window whose thread stops processing messages half a
+    /// second after creating it: to Windows, a hung app. Dropping it lets the thread pump again,
+    /// destroy the window and exit.
+    struct HungWindow {
+        hwnd: HWND,
+        release: Option<mpsc::Sender<()>>,
+        thread: Option<thread::JoinHandle<()>>,
+    }
+
+    impl HungWindow {
+        fn open() -> Self {
+            let (created_tx, created_rx) = mpsc::channel();
+            let (release, released) = mpsc::channel::<()>();
+            let thread = thread::spawn(move || {
+                let hwnd = create_unfocused_window();
+                // Window handles are not `Send`; pass the handle value.
+                let _ = created_tx.send(hwnd.map(hwnd_key));
+                let Some(hwnd) = hwnd else {
+                    return;
+                };
+                // Respond for a moment, like an app that was in use before it froze.
+                let responsive_until = Instant::now() + Duration::from_millis(500);
+                while Instant::now() < responsive_until {
+                    pump_messages();
+                    thread::sleep(Duration::from_millis(10));
+                }
+                // No message is processed from here until released.
+                let _ = released.recv();
+                pump_messages();
+                // SAFETY: the window was created by this thread, the only one that may destroy it.
+                let _ = unsafe { DestroyWindow(hwnd) };
+                pump_messages();
+            });
+            let key = created_rx.recv().ok().flatten();
+            let key = key.expect("create a top-level test window");
+            Self {
+                hwnd: hwnd_from_key(key),
+                release: Some(release),
+                thread: Some(thread),
+            }
+        }
+    }
+
+    impl Drop for HungWindow {
+        fn drop(&mut self) {
+            drop(self.release.take());
+            if let Some(thread) = self.thread.take() {
+                let _ = thread.join();
+            }
+        }
+    }
+
+    fn create_unfocused_window() -> Option<HWND> {
+        // SAFETY: `None` asks for this executable's module handle; there is nothing to release.
+        let module = unsafe { GetModuleHandleW(None) }.ok()?;
+        // SAFETY: "STATIC" is a system class registered in every GUI process; every other
+        // argument is a plain value or null. The window belongs to the calling thread.
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("STATIC"),
+                w!("Studio Pulse ghost test"),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                360,
+                200,
+                None,
+                None,
+                Some(module.into()),
+                None,
+            )
+        }
+        .ok()?;
+        // SAFETY: plain call on the window this thread just created. No activation, so the
+        // check never takes the focus from whoever is using the desktop.
+        let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
+        Some(hwnd)
+    }
+
+    fn pump_messages() {
+        let mut msg = MSG::default();
+        // SAFETY: `msg` is a valid out-buffer, dispatched only on the thread that received it.
+        while unsafe { PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE) }.as_bool() {
+            // SAFETY: as above.
+            unsafe {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+
+    /// Drives the probe's top-level resolution with a real ghost instead of the foreground
+    /// window, so both the export path and the fallback run without stealing the focus.
+    /// `cargo test --lib ghost_of_a_hung_window -- --ignored`
+    #[test]
+    #[ignore = "needs an interactive Windows desktop; shows an unfocused window that hangs ~5 s"]
+    fn ghost_of_a_hung_window_resolves_to_the_hung_app() {
+        let own_pid = std::process::id();
+        let window = HungWindow::open();
+        let mut probe = Win32Probe::new();
+        let mut no_export = Win32Probe {
+            hung_window_from_ghost: None,
+            ..Win32Probe::new()
+        };
+        // Both probes see the window before it is ghosted, as when the user works in the app.
+        for each in [&mut probe, &mut no_export] {
+            let app = each.query_top_level(window.hwnd).map(|app| app.pid);
+            assert_eq!(app, Some(own_pid));
+        }
+
+        let hung_window_from_ghost = load_hung_window_from_ghost().expect("export present");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let ghost = loop {
+            let ghost = top_level_windows().into_iter().find(|&candidate| {
+                // SAFETY: as in `Win32Probe::query_ghost`; any handle value is acceptable.
+                let hung = unsafe { hung_window_from_ghost(candidate) };
+                hung == window.hwnd
+            });
+            if let Some(ghost) = ghost {
+                break ghost;
+            }
+            // Observed on Windows 11 (build 26200): a hung window that is not in the foreground
+            // is ghosted once something asks whether it is hung; without that query it was not
+            // ghosted within 15 s.
+            let _ = is_hung_window(window.hwnd);
+            assert!(
+                Instant::now() < deadline,
+                "Windows never ghosted the window (hung: {}); is window ghosting disabled?",
+                is_hung_window(window.hwnd)
+            );
+            thread::sleep(Duration::from_millis(100));
+        };
+        assert!(is_hung_window(window.hwnd));
+        let ghost_pid = window_pid(ghost).expect("the ghost has an owner");
+        let ghost_owner = snapshot_exe_name(ghost_pid);
+        assert!(
+            ghost_owner.as_deref().is_some_and(is_ghost_host),
+            "ghost owned by {ghost_owner:?}"
+        );
+
+        // HungWindowFromGhostWindow: the hung app, served from its cache entry. The second poll
+        // takes the known-ghost shortcut.
+        for poll in 0..2 {
+            let app = probe.query_top_level(ghost);
+            assert_eq!(app.map(|app| app.pid), Some(own_pid), "poll {poll}");
+        }
+        assert_eq!(probe.ghost, Some((hwnd_key(ghost), ghost_pid)));
+        let cached = probe.foreground.as_ref().map(|cached| cached.hwnd);
+        assert_eq!(cached, Some(hwnd_key(window.hwnd)), "hung app's entry kept");
+
+        // Without the export: the cached foreground window is hung, so it is reported.
+        let app = no_export.query_top_level(ghost).map(|app| app.pid);
+        assert_eq!(app, Some(own_pid));
+
+        // Without the export and without history there is nothing to attribute the ghost to.
+        let mut cold = Win32Probe {
+            hung_window_from_ghost: None,
+            ..Win32Probe::new()
+        };
+        assert_eq!(cold.query_top_level(ghost), None);
+
+        // Once the hung window is gone, a stale ghost handle resolves to nothing.
+        drop(window);
+        assert_eq!(probe.query_top_level(ghost), None);
     }
 }
