@@ -1,0 +1,444 @@
+/*
+ * Chart marks follow the dataviz mark specs: thin bars (<= 24 px), 4 px rounded data ends,
+ * a 2 px surface gap between touching fills, hairline solid grid, text in text tokens only.
+ * `--c` carries the series colour of a mark; idle time is drawn as a 135 deg hatch of the same
+ * colour so active/idle never relies on colour alone.
+ */
+
+.sp-fill {
+  background-color: var(--c, var(--sp-viz-total));
+}
+
+.sp-fill--hatched {
+  background-color: color-mix(in srgb, var(--c, var(--sp-viz-idle)) 20%, transparent);
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--c, var(--sp-viz-idle)) 78%, transparent) 0 1.5px,
+    transparent 1.5px 4.5px
+  );
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Stat tile                                                                                  */
+/* ------------------------------------------------------------------------------------------ */
+
+.sp-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-3);
+}
+
+.sp-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px 13px;
+  border-radius: var(--sp-radius-lg);
+  border: 1px solid var(--sp-border);
+  background: var(--sp-surface-1);
+}
+
+.sp-stat__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
+  color: var(--sp-text-muted);
+}
+
+.sp-stat__value {
+  font-family: var(--sp-font-display);
+  font-size: var(--sp-text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--sp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-stat__meta {
+  font-size: var(--sp-text-sm);
+  color: var(--sp-text-faint);
+  min-height: 17px;
+}
+
+.sp-stat[data-stale='true'] .sp-stat__value {
+  opacity: 0.55;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Legend & swatches                                                                          */
+/* ------------------------------------------------------------------------------------------ */
+
+.sp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: var(--sp-text-sm);
+  color: var(--sp-text-muted);
+}
+
+.sp-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sp-swatch {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.sp-swatch--line {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.sp-swatch--dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Chart tooltip                                                                              */
+/* ------------------------------------------------------------------------------------------ */
+
+.sp-chart-tip {
+  position: fixed;
+  z-index: 60;
+  min-width: 150px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: var(--sp-radius-md);
+  border: 1px solid var(--sp-border-strong);
+  background: var(--sp-surface-overlay);
+  box-shadow: var(--sp-shadow-pop);
+  pointer-events: none;
+  font-size: var(--sp-text-sm);
+}
+
+.sp-chart-tip__title {
+  font-weight: 600;
+  color: var(--sp-text);
+  margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+
+.sp-chart-tip__subtitle {
+  color: var(--sp-text-faint);
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-chart-tip__rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 3px;
+}
+
+.sp-chart-tip__value {
+  font-weight: 600;
+  color: var(--sp-text);
+  font-variant-numeric: tabular-nums;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sp-chart-tip__label {
+  color: var(--sp-text-muted);
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Bar list (horizontal bars, one row per entity)                                             */
+/* ------------------------------------------------------------------------------------------ */
+
+.sp-barlist {
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-barlist__row {
+  display: grid;
+  grid-template-columns: minmax(96px, 34%) minmax(60px, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 36px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: var(--sp-radius-sm);
+  transition: background-color var(--sp-duration) var(--sp-ease);
+}
+
+.sp-barlist__row:hover,
+.sp-barlist__row:focus-visible {
+  background: var(--sp-hover);
+}
+
+.sp-barlist__row:focus-visible {
+  outline-offset: 0;
+}
+
+.sp-barlist__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sp-barlist__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sp-barlist__track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--sp-viz-track);
+  min-width: 0;
+}
+
+.sp-barlist__seg {
+  height: 100%;
+  flex: none;
+}
+
+.sp-barlist__seg + .sp-barlist__seg {
+  margin-left: 2px;
+}
+
+.sp-barlist__seg:last-child {
+  border-radius: 0 3px 3px 0;
+}
+
+.sp-barlist__value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 64px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.sp-barlist__primary {
+  font-weight: 600;
+  color: var(--sp-text);
+  white-space: nowrap;
+}
+
+.sp-barlist__secondary {
+  font-size: var(--sp-text-xs);
+  color: var(--sp-text-faint);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Timeline strip                                                                             */
+/* ------------------------------------------------------------------------------------------ */
+
+.sp-timeline {
+  position: relative;
+  padding-top: 2px;
+  padding-bottom: 22px;
+}
+
+.sp-timeline__track {
+  position: relative;
+  height: 30px;
+  border-radius: var(--sp-radius-sm);
+  background: var(--sp-viz-track);
+  outline-offset: 3px;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.sp-timeline__grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--sp-viz-grid);
+}
+
+.sp-timeline__seg {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 2px;
+  transition: opacity var(--sp-duration) var(--sp-ease);
+}
+
+.sp-timeline__seg[data-open='true'] {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.sp-timeline[data-hovering='true'] .sp-timeline__seg:not([data-active='true']) {
+  opacity: 0.45;
+}
+
+.sp-timeline__seg[data-active='true'] {
+  box-shadow: 0 0 0 1.5px var(--sp-text);
+  z-index: 1;
+}
+
+.sp-timeline__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--sp-text-muted);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.sp-timeline__ticks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 18px;
+}
+
+.sp-timeline__tick {
+  position: absolute;
+  top: 3px;
+  font-size: var(--sp-text-xs);
+  color: var(--sp-text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  translate: -50% 0;
+}
+
+.sp-timeline__tick[data-edge='start'] {
+  translate: 0 0;
+}
+
+.sp-timeline__tick[data-edge='end'] {
+  translate: -100% 0;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Column chart (stacked columns, SVG)                                                        */
+/* ------------------------------------------------------------------------------------------ */
+
+.sp-columns {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.sp-columns svg {
+  display: block;
+  overflow: visible;
+}
+
+.sp-columns__grid {
+  stroke: var(--sp-viz-grid);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.sp-columns__baseline {
+  stroke: var(--sp-viz-axis);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.sp-columns__ylabel,
+.sp-columns__xlabel {
+  fill: var(--sp-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-columns__primary {
+  fill: var(--sp-viz-total);
+}
+
+.sp-columns__secondary-bg {
+  fill: color-mix(in srgb, var(--sp-viz-idle) 30%, transparent);
+}
+
+.sp-columns__hatch-line {
+  stroke: var(--sp-viz-idle);
+  stroke-width: 1.5;
+}
+
+.sp-columns__col {
+  transition: opacity var(--sp-duration) var(--sp-ease);
+}
+
+.sp-columns[data-hovering='true'] .sp-columns__col:not([data-active='true']) {
+  opacity: 0.4;
+}
+
+.sp-columns__hit {
+  fill: transparent;
+}
+
+.sp-columns__focus {
+  fill: none;
+  stroke: var(--sp-focus);
+  stroke-width: 1.5;
+}
+
+.sp-columns:focus-visible {
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.sp-chart-tip__row {
+  display: contents;
+}
+
+.sp-stat__skeleton {
+  display: block;
+  width: 64%;
+  height: 28px;
+  margin: 2px 0 1px;
+  border-radius: 6px;
+}
+
+/* Refetch keeps the frame: the previous render stays, dimmed, with no layout jump. */
+.sp-barlist,
+.sp-timeline,
+.sp-columns,
+.sp-stats {
+  transition: opacity var(--sp-duration) var(--sp-ease);
+}
+
+.sp-barlist[data-stale='true'],
+.sp-timeline[data-stale='true'],
+.sp-columns[data-stale='true'] {
+  opacity: 0.6;
+}
+
+/* Forced colours: fills lose their colour, so keep idle distinguishable by its hatch. */
+@media (forced-colors: active) {
+  .sp-fill,
+  .sp-fill--hatched,
+  .sp-swatch {
+    forced-color-adjust: none;
+  }
+}

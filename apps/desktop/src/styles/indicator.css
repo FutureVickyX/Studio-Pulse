@@ -1,0 +1,155 @@
+/*
+ * Compact indicator window: 320 x 200, frameless, always on top. Everything fits without
+ * scrolling; the header is the drag region.
+ */
+
+:root[data-window='indicator'] body {
+  background: var(--sp-surface-1);
+}
+
+.ind {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  border: 1px solid var(--sp-border-strong);
+  background: var(--sp-surface-1);
+  user-select: none;
+}
+
+.ind[data-state='tracking'] {
+  border-color: color-mix(in srgb, var(--sp-status-tracking) 30%, var(--sp-border-strong));
+}
+
+.ind[data-state='idle'] {
+  border-color: color-mix(in srgb, var(--sp-status-idle) 30%, var(--sp-border-strong));
+}
+
+.ind__header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 6px 0 14px;
+  cursor: default;
+}
+
+/* Only elements carrying data-tauri-drag-region start a drag: let text fall through to the header. */
+.ind__status,
+.ind__status * {
+  pointer-events: none;
+}
+
+.ind__status--loading {
+  font-size: var(--sp-text-sm);
+  color: var(--sp-text-faint);
+}
+
+.ind__spacer {
+  flex: 1;
+  align-self: stretch;
+}
+
+.ind__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 2px 14px 0;
+}
+
+.ind__app {
+  font-family: var(--sp-font-display);
+  font-size: var(--sp-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.ind__live {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ind__clock {
+  font-family: var(--sp-font-display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.ind__live-label {
+  font-size: var(--sp-text-xs);
+  color: var(--sp-text-faint);
+}
+
+.ind__explanation {
+  font-size: var(--sp-text-sm);
+  line-height: 1.4;
+  color: var(--sp-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ind__today {
+  margin-top: auto;
+  padding-bottom: 8px;
+  font-size: var(--sp-text-xs);
+  color: var(--sp-text-faint);
+}
+
+.ind__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ind__error .app-inline-error {
+  flex: 1;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ind__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.ind__actions {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 12px 14px;
+  border-top: 1px solid var(--sp-border);
+}
+
+/* Errors from the pause control or "Open" float above the footer instead of pushing it. */
+.ind__actions .app-inline-error,
+.ind__floating-error {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 54px;
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: var(--sp-radius-sm);
+  border: 1px solid var(--sp-danger-border);
+  background: var(--sp-surface-overlay);
+  font-size: var(--sp-text-xs);
+  z-index: 2;
+}

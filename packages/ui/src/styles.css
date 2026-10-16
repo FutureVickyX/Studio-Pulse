@@ -1,0 +1,5 @@
+/* @studio-pulse/ui: import once at the app root. No remote fonts or assets (CSP). */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';
+@import './charts.css';
