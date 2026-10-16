@@ -48,6 +48,34 @@ npm test             # TypeScript (vitest) + Rust (cargo test)
 npm run build        # release build + NSIS installer
 ```
 
+## Verification status (Phase 1)
+
+Automated, all passing on Windows 11 (build 26200):
+
+| Suite | Tests |
+| --- | --- |
+| TypeScript: time-engine, validation, desktop UI logic, cross-package reconciliation (vitest) | 480 |
+| Rust: engine, registry, settings, store, platform, startup, window logic (`cargo test --lib`) | 124 |
+| Engine scenario fixtures (30) + 2,000 randomized streams (`engine_fixtures`) | 3 |
+| Tracker service with fake probe/clock, incl. simulated storage failures (`service_integration`) | 17 |
+| Store integration: migrations, idempotency, recovery, secure deletion (`store_integration`) | 34 |
+| Startup registration against a scratch registry key (`startup_registry`) | 11 |
+| Live Win32 probes, incl. a frozen "Not Responding" window (`windows_live`, `--ignored`) | 8 + 1 |
+
+Verified end-to-end with the real app on this machine:
+
+- Real foreground detection of Figma Desktop and Adobe After Effects during actual use. The tracker
+  matched the raw foreground within one 1 Hz poll.
+- A 3-hour system sleep was detected as a time gap and not credited.
+- Launch at login was written, read back and removed in the real `Run` and `StartupApproved` keys. An
+  `--autostart` launch started tray-only or showed the compact indicator, as configured.
+- "Pause until I resume" stayed paused across a real quit and relaunch.
+- The webviews were refused tray, menu, image and event-emit APIs, and the indicator was refused
+  settings changes.
+
+Still to do on a real install (see [docs/testing.md](docs/testing.md#3-manual-windows-verification-checklist)):
+run the installer, sign out/in or reboot with launch at login enabled, and check Blender detection.
+
 ## Repository layout
 
 | Path | What |
