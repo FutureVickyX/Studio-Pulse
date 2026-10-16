@@ -24,7 +24,7 @@ import { PauseControl } from '../components/PauseControl';
 import { useTrackerActions, useTrackerStatus } from '../hooks/useLive';
 import { subscribe } from '../lib/api';
 import { clockTime } from '../lib/format';
-import { matchShortcut, SHORTCUTS } from '../lib/keyboard';
+import { matchShortcut, phaseTwoShortcutNote, SHORTCUTS } from '../lib/keyboard';
 import { isRoute, NAV_ITEMS, resolveNavigation, sectionOf, settingsTabOf } from '../lib/routes';
 import type { Section } from '../lib/routes';
 import { describeStatus, hasLiveSession, pauseAction } from '../lib/status';
@@ -246,6 +246,8 @@ function TrackingCard({ shortcutError }: { shortcutError: string | null }) {
 // Shortcuts sheet
 // ---------------------------------------------------------------------------------------------
 
+const phaseTwoNote = phaseTwoShortcutNote();
+
 function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Dialog
@@ -273,7 +275,7 @@ function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void
           </div>
         ))}
       </dl>
-      <p className="app-dialog-text sp-faint">Tasks, Notes, Projects and Team (Ctrl+2, 3, 4, 6) arrive in Phase 2.</p>
+      {phaseTwoNote ? <p className="app-dialog-text sp-faint">{phaseTwoNote}</p> : null}
     </Dialog>
   );
 }

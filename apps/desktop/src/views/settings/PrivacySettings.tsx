@@ -172,10 +172,21 @@ export function PrivacySettings() {
 
       <Card title="Export" description="Save your full tracking history as a file. You choose where it goes.">
         <div className="app-button-row">
-          <Button icon={<IconDownload size={14} />} pending={exporting === 'json'} disabled={exporting !== null} onClick={() => void exportAs('json')}>
+          {/* The running export's own button is `pending` (still focusable); only the other is disabled. */}
+          <Button
+            icon={<IconDownload size={14} />}
+            pending={exporting === 'json'}
+            disabled={exporting === 'csv'}
+            onClick={() => void exportAs('json')}
+          >
             Export JSON
           </Button>
-          <Button icon={<IconDownload size={14} />} pending={exporting === 'csv'} disabled={exporting !== null} onClick={() => void exportAs('csv')}>
+          <Button
+            icon={<IconDownload size={14} />}
+            pending={exporting === 'csv'}
+            disabled={exporting === 'json'}
+            onClick={() => void exportAs('csv')}
+          >
             Export CSV
           </Button>
         </div>

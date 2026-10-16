@@ -1,11 +1,11 @@
 /**
  * Workspace keyboard map. Pure: takes the relevant key-event fields, returns an action.
  * Ctrl+1…7 sections (Phase-2 sections ignored), Ctrl+, Settings, Ctrl+Shift+P pause/resume,
- * `?` shortcuts sheet.
+ * `?` shortcuts sheet. Unit-tested in tests/unit/desktop.
  */
 
 import type { Route } from '@studio-pulse/shared-types';
-import { navItemForDigit } from './routes';
+import { NAV_ITEMS, navItemForDigit } from './routes';
 
 export type ShortcutAction =
   | { type: 'navigate'; route: Route }
@@ -29,9 +29,18 @@ export interface KeyContext {
   modalOpen: boolean;
 }
 
-function digitOf(input: KeyInput): number | null {
-  const match = /^(?:Digit|Numpad)([0-9])$/.exec(input.code);
-  if (match?.[1]) return Number(match[1]);
+/**
+ * The digit a key press stands for, or null.
+ * - Top-row keys by physical position (`Digit1`), so Ctrl+1 works on AZERTY too, where the key
+ *   itself produces `&`.
+ * - Numpad keys only when they actually type a digit: with NumLock off, `Numpad1` is End,
+ *   `Numpad7` Home, and so on, and Ctrl+End in a text field must keep moving the caret.
+ * - Otherwise any key that types a digit.
+ */
+export function digitOf(input: Pick<KeyInput, 'key' | 'code'>): number | null {
+  const top = /^Digit([0-9])$/.exec(input.code);
+  if (top?.[1]) return Number(top[1]);
+  if (/^Numpad[0-9]$/.test(input.code) && !/^[0-9]$/.test(input.key)) return null;
   if (/^[0-9]$/.test(input.key)) return Number(input.key);
   return null;
 }
@@ -65,12 +74,24 @@ export interface ShortcutDescription {
   description: string;
 }
 
+/** The shortcuts sheet: one Ctrl+digit row per section that is available in this phase. */
 export const SHORTCUTS: readonly ShortcutDescription[] = [
-  { keys: ['Ctrl', '1'], description: 'Home' },
-  { keys: ['Ctrl', '5'], description: 'Time' },
-  { keys: ['Ctrl', '7'], description: 'Settings' },
+  ...NAV_ITEMS.filter((item) => item.available).map((item) => ({
+    keys: ['Ctrl', String(item.digit)],
+    description: item.label,
+  })),
   { keys: ['Ctrl', ','], description: 'Settings' },
   { keys: ['Ctrl', 'Shift', 'P'], description: 'Pause or resume tracking' },
   { keys: ['?'], description: 'Show keyboard shortcuts' },
   { keys: ['Esc'], description: 'Close a dialog or menu' },
 ];
+
+/** Sentence for the sheet's footnote, e.g. "Tasks, Notes, Projects and Team (Ctrl+2, 3, 4, 6) arrive in Phase 2." */
+export function phaseTwoShortcutNote(): string | null {
+  const later = NAV_ITEMS.filter((item) => !item.available);
+  if (later.length === 0) return null;
+  const labels = later.map((item) => item.label);
+  const names = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+  const digits = later.map((item) => item.digit).join(', ');
+  return `${names} (Ctrl+${digits}) arrive${later.length === 1 ? 's' : ''} in Phase 2.`;
+}

@@ -33,9 +33,9 @@ function statusSignature(): string {
 }
 
 /**
- * Tracking events overlapping `range`. Refetches when the range changes, on
- * `tracker://events-changed`, when the tracker status changes, and every 15 s while visible.
- * Previous data stays available while a refetch runs.
+ * Tracking events overlapping `range`. Refetches when the range changes, and — only while the
+ * window is visible — on `tracker://events-changed`, when the tracker status changes, and every
+ * 15 s; becoming visible again refetches once. Previous data stays available while a refetch runs.
  */
 export function useEvents(range: TimeRangeInput | null): EventsState {
   const [state, setState] = useState<Omit<EventsState, 'reload'>>({
@@ -77,16 +77,20 @@ export function useEvents(range: TimeRangeInput | null): EventsState {
     return () => window.clearTimeout(debounceTimer.current);
   }, [fetchNow]);
 
-  // Push notifications from the tracker.
+  // Push notifications from the tracker. While the window is hidden they are ignored: the
+  // tracker writes every checkpoint (~15 s) all day, and becoming visible refetches anyway.
   useEffect(() => {
     if (fromMs === null) return;
-    const stopEvents = subscribe('tracker://events-changed', schedule);
+    const scheduleIfVisible = () => {
+      if (document.visibilityState === 'visible') schedule();
+    };
+    const stopEvents = subscribe('tracker://events-changed', scheduleIfVisible);
     let signature = statusSignature();
     const stopStatus = trackerStatusStore.subscribe(() => {
       const next = statusSignature();
       if (next !== signature) {
         signature = next;
-        schedule();
+        scheduleIfVisible();
       }
     });
     return () => {

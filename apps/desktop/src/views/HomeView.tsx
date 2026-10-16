@@ -58,7 +58,7 @@ export function HomeView({ onNavigate }: { onNavigate: (route: Route) => void })
         <Card title="Timeline">
           <Skeleton height={30} radius={6} />
         </Card>
-      ) : summary && report.range ? (
+      ) : summary ? (
         empty ? (
           <Card>
             <EmptyState icon={<IconPulse size={18} />} title="Nothing recorded yet today">
@@ -68,9 +68,11 @@ export function HomeView({ onNavigate }: { onNavigate: (route: Route) => void })
         ) : (
           <>
             <Card title="Timeline" description="Each block is one stretch in one app. Hatched = idle.">
+              {/* The range the summary was computed for: at midnight `report.range` is already the
+                  new day while the previous day's data is still on screen. */}
               <DayTimeline
                 summary={summary}
-                range={report.range}
+                range={summary.range}
                 colors={colors}
                 timeZone={report.timeZone}
                 live

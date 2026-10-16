@@ -69,6 +69,7 @@ export function describeStatus(status: TrackerStatus, options: DescribeOptions):
         explanation: 'The screen is locked or the screen saver is on. Nothing is recorded.',
       };
     case 'paused': {
+      // A pause is stored by the tracker and survives restarts of Studio Pulse and of Windows.
       const until = status.pausedUntil ? Date.parse(status.pausedUntil) : Number.NaN;
       return {
         state: status.state,
@@ -76,8 +77,8 @@ export function describeStatus(status: TrackerStatus, options: DescribeOptions):
         label: 'Paused',
         headline: Number.isFinite(until) ? `Paused until ${options.formatTime(until)}` : 'Paused until you resume',
         explanation: Number.isFinite(until)
-          ? 'Nothing is recorded until then. Tracking resumes on its own.'
-          : 'Nothing is recorded while tracking is paused.',
+          ? 'Nothing is recorded until then, even across a restart. Tracking then resumes on its own.'
+          : 'Nothing is recorded until you resume, even after Studio Pulse or Windows restarts.',
       };
     }
     case 'disabled':

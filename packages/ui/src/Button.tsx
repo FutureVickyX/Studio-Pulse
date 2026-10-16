@@ -21,7 +21,11 @@ export interface ButtonProps extends ComponentPropsWithRef<'button'> {
   size?: ButtonSize;
   icon?: ReactNode;
   iconAfter?: ReactNode;
-  /** Shows a spinner in place of the icon and blocks clicks while an action runs. */
+  /**
+   * Shows a spinner in place of the icon and blocks activation while an action runs. The button
+   * stays focusable (`aria-disabled`, not `disabled`), so keyboard focus is not dropped to the
+   * page body mid-action — inside a modal dialog that would strand the user.
+   */
   pending?: boolean;
 }
 
@@ -35,15 +39,26 @@ export function Button({
   children,
   disabled,
   type = 'button',
+  onClick,
   ...rest
 }: ButtonProps) {
+  const busy = pending && !disabled;
   return (
     <button
       type={type}
       className={cx('sp-btn', `sp-btn--${variant}`, size === 'sm' && 'sp-btn--sm', className)}
-      disabled={disabled || pending}
+      disabled={disabled}
+      aria-disabled={busy || undefined}
       aria-busy={pending || undefined}
       {...rest}
+      onClick={(event) => {
+        if (busy) {
+          // Also stops a pending submit button from submitting its form again.
+          event.preventDefault();
+          return;
+        }
+        onClick?.(event);
+      }}
     >
       {pending ? <Spinner size={size === 'sm' ? 11 : 12} /> : icon}
       {children != null && children !== false ? <span>{children}</span> : null}

@@ -21,16 +21,16 @@ export function GeneralSettings({ settings }: { settings: Settings }) {
         <SettingRow
           title="Theme"
           description="System follows the Windows light or dark setting."
-          control={({ labelId }) => (
-            <span aria-labelledby={labelId} role="presentation">
-              <SegmentedControl<ThemePreference>
-                aria-label="Theme"
-                options={THEMES}
-                value={general.theme}
-                disabled={patcher.isPending('theme')}
-                onChange={(theme) => void patcher.apply('theme', { general: { theme } })}
-              />
-            </span>
+          control={() => (
+            // The radiogroup names itself; a `role="presentation"` wrapper can't carry a name.
+            <SegmentedControl<ThemePreference>
+              aria-label="Theme"
+              options={THEMES}
+              value={general.theme}
+              // Not disabled while saving: arrow keys move the selection, and disabling the
+              // radios under the keyboard focus would drop it. The value shown is the confirmed one.
+              onChange={(theme) => void patcher.apply('theme', { general: { theme } })}
+            />
           )}
         >
           <InlineError error={patcher.errorFor('theme')} />

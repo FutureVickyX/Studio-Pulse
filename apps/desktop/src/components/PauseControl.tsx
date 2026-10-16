@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import { Button, IconChevronDown, IconPause, IconPlay, Menu } from '@studio-pulse/ui';
 import type { MenuItem } from '@studio-pulse/ui';
 import type { TrackerState } from '@studio-pulse/shared-types';
@@ -30,6 +31,23 @@ export function PauseControl({ state, size = 'sm', className, showError = true, 
   const actions = useTrackerActions();
   const mode = state ? pauseAction(state) : 'none';
 
+  // Pause and Resume are different buttons, so a confirmed change replaces the focused element.
+  // When the user acted from this control, put focus on its replacement instead of the page body.
+  const wrapperRef = useRef<HTMLSpanElement>(null);
+  const refocus = useRef(false);
+  const run = (action: () => Promise<void>) => {
+    refocus.current = !!wrapperRef.current?.contains(document.activeElement);
+    void action();
+  };
+  useLayoutEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    const active = document.activeElement;
+    // Respect a move the user made meanwhile; only rescue focus that fell to the page.
+    if (active && active !== document.body && !wrapperRef.current?.contains(active)) return;
+    wrapperRef.current?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus();
+  }, [mode]);
+
   let control;
   if (mode === 'resume') {
     control = (
@@ -38,7 +56,7 @@ export function PauseControl({ state, size = 'sm', className, showError = true, 
         variant="primary"
         icon={<IconPlay size={13} />}
         pending={actions.pending}
-        onClick={() => void actions.resume()}
+        onClick={() => run(actions.resume)}
         className={className}
       >
         Resume
@@ -48,7 +66,10 @@ export function PauseControl({ state, size = 'sm', className, showError = true, 
     const items: MenuItem[] = PAUSE_OPTIONS.map((option) => ({
       id: option.id,
       label: option.label,
-      onSelect: () => void actions.pause(option.minutes),
+      disabled: actions.pending,
+      onSelect: () => {
+        if (!actions.pending) run(() => actions.pause(option.minutes));
+      },
     }));
     control = (
       <Menu
@@ -80,9 +101,10 @@ export function PauseControl({ state, size = 'sm', className, showError = true, 
   }
 
   return (
-    <>
+    // `display: contents`: the wrapper only scopes focus handling and adds no layout box.
+    <span ref={wrapperRef} className="app-pause">
       {control}
       {showError ? <InlineError error={actions.error} /> : null}
-    </>
+    </span>
   );
 }

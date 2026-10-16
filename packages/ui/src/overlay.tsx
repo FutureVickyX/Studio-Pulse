@@ -20,7 +20,7 @@ export type Placement = 'bottom-start' | 'bottom-end' | 'top-start' | 'right' | 
 
 /**
  * Place a floating box of `size` next to `anchor`, flipping and clamping so it never leaves the
- * viewport (the indicator window is only 320 x 200).
+ * viewport (the indicator window is only 320 x 204).
  */
 export function placeFloating(
   anchor: AnchorRect,

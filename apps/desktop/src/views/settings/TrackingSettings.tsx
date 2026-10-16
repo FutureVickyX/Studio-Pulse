@@ -27,7 +27,7 @@ export function TrackingSettings({ settings }: { settings: Settings }) {
         />
         <SwitchSetting
           title="Start tracking automatically"
-          description="Start recording as soon as Studio Pulse launches. When off, it launches paused."
+          description="Record as soon as Studio Pulse launches. When off, it launches paused until you resume. A pause you started yourself is kept across restarts either way."
           checked={tracking.startAutomatically}
           disabled={!tracking.enabled}
           pending={patcher.isPending('startAutomatically')}

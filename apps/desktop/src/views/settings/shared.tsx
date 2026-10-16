@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { SettingsPatch } from '@studio-pulse/shared-types';
 import { Badge, Banner, Switch, TextInput } from '@studio-pulse/ui';
@@ -124,14 +124,17 @@ export function NumberSetting({
 }) {
   const [draft, setDraft] = useState(String(value));
   const [localError, setLocalError] = useState<string | null>(null);
+  /** Enter commits and the blur that may follow must not send the same patch twice. */
+  const committing = useRef(false);
 
-  // Follow confirmed changes (e.g. from another window) when not editing an invalid draft.
+  // Follow confirmed changes (including our own, and ones from another window).
   useEffect(() => {
     setDraft(String(value));
     setLocalError(null);
   }, [value]);
 
   async function commit() {
+    if (committing.current) return;
     const trimmed = draft.trim();
     if (trimmed === String(value)) {
       setLocalError(null);
@@ -143,8 +146,14 @@ export function NumberSetting({
       return;
     }
     setLocalError(null);
-    const ok = await onCommit(parsed);
-    if (!ok) setDraft(String(value));
+    committing.current = true;
+    try {
+      const ok = await onCommit(parsed);
+      // Rejected: show the confirmed value again (the error explains why).
+      if (!ok) setDraft(String(value));
+    } finally {
+      committing.current = false;
+    }
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -171,7 +180,10 @@ export function NumberSetting({
             inputMode="numeric"
             className="app-number__input"
             value={draft}
-            disabled={disabled || pending}
+            disabled={disabled}
+            // Read-only (not disabled) while saving, so keyboard focus stays in the field.
+            readOnly={pending}
+            aria-busy={pending || undefined}
             invalid={shownError !== null}
             aria-describedby={descriptionId}
             onChange={(event) => setDraft(event.currentTarget.value)}

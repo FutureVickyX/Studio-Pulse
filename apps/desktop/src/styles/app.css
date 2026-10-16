@@ -183,6 +183,11 @@
   width: 100%;
 }
 
+/* PauseControl's wrapper scopes focus handling only; its children lay out as if it weren't there. */
+.app-pause {
+  display: contents;
+}
+
 .app-pause__chevron {
   margin-left: auto;
   opacity: 0.7;
@@ -651,8 +656,18 @@
   color: var(--sp-text-muted);
 }
 
+/*
+ * Header cells hold a sort button (an atomic inline box). With the cells' `text-overflow:
+ * ellipsis`, a button wider than the cell made Chromium paint a clipped "…" after it
+ * ("Foreground··"). Header cells therefore never ellipsize; the button is capped to the cell and
+ * its label truncates on its own if a translation is ever too long.
+ */
+.app-table thead th {
+  text-overflow: clip;
+}
+
 .app-table thead th.app-table__num {
-  width: 96px;
+  width: 112px;
 }
 
 .app-table tbody th {
@@ -682,6 +697,9 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  /* The negative side margins let the hover background bleed 4px past the cell padding. */
+  max-width: calc(100% + 8px);
+  min-width: 0;
   height: 24px;
   padding: 0 4px;
   margin: 0 -4px;
@@ -707,9 +725,33 @@
   color: var(--sp-text);
 }
 
+.app-table__sort:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: -2px;
+}
+
+.app-table__sort-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .app-table__sort-icon {
   display: inline-flex;
+  flex: none;
   width: 12px;
+}
+
+/* Inactive columns: the direction a click would apply, shown only on hover or keyboard focus. */
+.app-table__sort-icon--hint {
+  opacity: 0;
+  transition: opacity var(--sp-duration) var(--sp-ease);
+}
+
+.app-table__sort:hover .app-table__sort-icon--hint,
+.app-table__sort:focus-visible .app-table__sort-icon--hint {
+  opacity: 0.55;
 }
 
 .app-table__app {

@@ -4,8 +4,8 @@
  * through `useSyncExternalStore`, so each Rust event is listened to once per window.
  */
 
-import { toCommandError } from './api';
-import type { ApiError } from './api';
+import { toCommandError } from './errors';
+import type { ApiError } from './errors';
 
 export interface ResourceState<T> {
   readonly data: T | undefined;

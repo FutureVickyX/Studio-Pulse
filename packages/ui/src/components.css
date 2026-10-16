@@ -88,8 +88,10 @@
   opacity: 0.5;
 }
 
+/* Pending: still focusable (aria-disabled), activation is ignored. */
 .sp-btn[aria-busy='true'] {
   opacity: 0.8;
+  cursor: progress;
 }
 
 /* ------------------------------------------------------------------------------------------ */

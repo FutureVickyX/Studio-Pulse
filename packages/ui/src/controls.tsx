@@ -11,7 +11,10 @@ export interface SwitchProps {
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
-  /** The change is being applied: the switch keeps showing the confirmed value and blocks input. */
+  /**
+   * The change is being applied: the switch keeps showing the confirmed value and ignores input.
+   * It stays focusable (`aria-disabled`), so toggling from the keyboard doesn't lose focus.
+   */
   pending?: boolean;
   id?: string;
   'aria-label'?: string;
@@ -20,6 +23,7 @@ export interface SwitchProps {
 }
 
 export function Switch({ checked, onChange, disabled = false, pending = false, id, ...aria }: SwitchProps) {
+  const busy = pending && !disabled;
   return (
     <button
       type="button"
@@ -28,9 +32,12 @@ export function Switch({ checked, onChange, disabled = false, pending = false, i
       className="sp-switch"
       aria-checked={checked}
       aria-busy={pending || undefined}
+      aria-disabled={busy || undefined}
       data-pending={pending || undefined}
-      disabled={disabled || pending}
-      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      onClick={() => {
+        if (!busy) onChange(!checked);
+      }}
       {...aria}
     >
       <span className="sp-switch__thumb" />

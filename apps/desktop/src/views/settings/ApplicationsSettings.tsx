@@ -152,8 +152,8 @@ export function ApplicationsSettings() {
 
       {applications.data ? (
         <p className="app-count-note">
-          {enabledCount} of {applications.data.length} applications tracked. Only the matched application name is stored
-          with each interval, never the executable path.
+          {enabledCount} of {applications.data.length} applications tracked. Built-in applications added by a later update
+          start switched off. Only the matched application name is stored with each interval, never the executable path.
         </p>
       ) : null}
 
@@ -312,9 +312,14 @@ function ApplicationRow({
         aria-label={`Category for ${app.displayName}`}
         options={CATEGORY_OPTIONS}
         value={app.category}
-        disabled={pending !== null}
+        // Not `disabled` while saving: arrow keys change a closed <select> on Windows, and
+        // disabling it under the keyboard focus would drop focus to the page. Changes made while
+        // another save runs are ignored (the controlled value snaps back to the confirmed one).
+        aria-busy={pending === 'category' || undefined}
         className="app-apps__category"
-        onChange={(category) => void save('category', { category })}
+        onChange={(category) => {
+          if (pending === null) void save('category', { category });
+        }}
       />
       <span className="app-apps__switch">
         <label htmlFor={enabledId} className="sp-visually-hidden">
@@ -363,22 +368,34 @@ function RenameInput({
 }: {
   value: string;
   pending: boolean;
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string) => Promise<void>;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLInputElement>(null);
   const cancelled = useRef(false);
+  /** Enter submits; the blur that can follow must not submit the same name again. */
+  const submitting = useRef(false);
 
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
   }, []);
 
+  async function submit() {
+    if (cancelled.current || submitting.current || pending) return;
+    submitting.current = true;
+    try {
+      await onSubmit(draft.trim());
+    } finally {
+      submitting.current = false;
+    }
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault();
-      onSubmit(draft.trim());
+      void submit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
       cancelled.current = true;
@@ -393,12 +410,12 @@ function RenameInput({
       aria-label="Application name"
       value={draft}
       maxLength={80}
-      disabled={pending}
+      // Read-only (not disabled) while saving, so focus stays here if the save fails.
+      readOnly={pending}
+      aria-busy={pending || undefined}
       onChange={(event) => setDraft(event.currentTarget.value)}
       onKeyDown={onKeyDown}
-      onBlur={() => {
-        if (!cancelled.current && !pending) onSubmit(draft.trim());
-      }}
+      onBlur={() => void submit()}
     />
   );
 }
@@ -440,6 +457,7 @@ function MatcherEditor({
   showErrors: boolean;
 }) {
   const errors = draftErrors(drafts);
+  const errorIdBase = useId();
   const update = (key: number, changes: Partial<MatcherDraft>) =>
     onChange(drafts.map((draft) => (draft.key === key ? { ...draft, ...changes } : draft)));
 
@@ -451,6 +469,7 @@ function MatcherEditor({
       </div>
       {drafts.map((draft, index) => {
         const error = showErrors || draft.exe ? errors[index] : null;
+        const errorId = `${errorIdBase}-${draft.key}`;
         return (
           <div key={draft.key} className="app-matchers__row">
             <TextInput
@@ -460,6 +479,7 @@ function MatcherEditor({
               placeholder="Photoshop.exe"
               value={draft.exe}
               invalid={!!error}
+              aria-describedby={error ? errorId : undefined}
               onChange={(event) => update(draft.key, { exe: event.currentTarget.value })}
             />
             <TextInput
@@ -478,7 +498,7 @@ function MatcherEditor({
               onClick={() => onChange(drafts.filter((item) => item.key !== draft.key))}
             />
             {error ? (
-              <p className="app-inline-error app-matchers__error" role="alert">
+              <p className="app-inline-error app-matchers__error" id={errorId} role="alert">
                 {error}
               </p>
             ) : null}
@@ -845,7 +865,7 @@ function ResetDialog({
       onClose={onClose}
       dismissible={!pending}
       title="Reset applications to defaults?"
-      description="Built-in applications get back their default names, categories, matchers and on/off state."
+      description="Built-in applications get back their default names, categories, matchers and on/off state, so built-ins you switched off that are on by default will be tracked again."
       footerStart={<InlineError error={error} />}
       footer={
         <>

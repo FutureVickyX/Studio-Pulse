@@ -1,5 +1,5 @@
 /*
- * Compact indicator window: 320 x 200, frameless, always on top. Everything fits without
+ * Compact indicator window: 320 x 204 (window_manager.rs), frameless, always on top. Everything fits without
  * scrolling; the header is the drag region.
  */
 

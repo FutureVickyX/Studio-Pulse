@@ -350,6 +350,12 @@ export function IntervalList({
 // ---------------------------------------------------------------------------------------------
 
 type SortKey = 'name' | 'foregroundMs' | 'activeMs' | 'idleMs' | 'activeShare';
+type SortDirection = 'asc' | 'desc';
+
+/** Names sort A→Z first; durations and shares largest first. */
+function firstDirection(key: SortKey): SortDirection {
+  return key === 'name' ? 'asc' : 'desc';
+}
 
 const COLUMNS: ReadonlyArray<{ key: SortKey; label: string; numeric: boolean }> = [
   { key: 'name', label: 'Application', numeric: false },
@@ -369,7 +375,7 @@ export function UsageTable({
   /** Applications marked "not in reports" (shown with a tag when they are included). */
   excludedIds?: ReadonlySet<string>;
 }) {
-  const [sort, setSort] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'activeMs', direction: 'desc' });
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'activeMs', direction: 'desc' });
   const rows = useMemo(() => {
     const list = summary.byApplication.slice();
     list.sort((a, b) => {
@@ -384,7 +390,7 @@ export function UsageTable({
     setSort((previous) =>
       previous.key === key
         ? { key, direction: previous.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'name' ? 'asc' : 'desc' },
+        : { key, direction: firstDirection(key) },
     );
   }
 
@@ -395,6 +401,9 @@ export function UsageTable({
           <tr>
             {COLUMNS.map((column) => {
               const active = sort.key === column.key;
+              // The active column shows its direction; the others show (on hover/focus only) the
+              // direction a click would apply. The slot is always reserved so labels never shift.
+              const direction = active ? sort.direction : firstDirection(column.key);
               return (
                 <th
                   key={column.key}
@@ -403,9 +412,12 @@ export function UsageTable({
                   aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
                 >
                   <button type="button" className="app-table__sort" onClick={() => toggle(column.key)}>
-                    {column.label}
-                    <span className="app-table__sort-icon" aria-hidden="true">
-                      {active ? sort.direction === 'asc' ? <IconChevronUp size={12} /> : <IconChevronDown size={12} /> : null}
+                    <span className="app-table__sort-label">{column.label}</span>
+                    <span
+                      className={active ? 'app-table__sort-icon' : 'app-table__sort-icon app-table__sort-icon--hint'}
+                      aria-hidden="true"
+                    >
+                      {direction === 'asc' ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />}
                     </span>
                   </button>
                 </th>

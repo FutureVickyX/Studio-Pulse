@@ -11,7 +11,7 @@ import { clockTime } from '../lib/format';
 import { describeStatus, hasLiveSession } from '../lib/status';
 
 /**
- * Compact always-on-top indicator (320 x 200, frameless), shown above the tray icon. Always dark:
+ * Compact always-on-top indicator (320 x 204, frameless), shown above the tray icon. Always dark:
  * it floats over the taskbar and the native window background is dark (no light flash on show).
  */
 export function IndicatorApp() {
