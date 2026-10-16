@@ -83,10 +83,21 @@ fn notify(app: &AppHandle, title: &str, body: &str) {
     }
 }
 
+/// `%APPDATA%\com.studiopulse.desktop`. Development builds honour `STUDIO_PULSE_DATA_DIR` so
+/// end-to-end tests never touch a real installation's data; release builds ignore it.
+fn data_directory(app: &tauri::App) -> tauri::Result<std::path::PathBuf> {
+    if cfg!(debug_assertions) {
+        if let Some(dir) = std::env::var_os("STUDIO_PULSE_DATA_DIR").filter(|d| !d.is_empty()) {
+            return Ok(std::path::PathBuf::from(dir));
+        }
+    }
+    app.path().app_data_dir()
+}
+
 /// Open the store, recover, build the tracker, tray and windows. Runs inside Tauri's `setup`.
 fn initialise(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
-    let data_dir = app.path().app_data_dir()?;
+    let data_dir = data_directory(app)?;
     std::fs::create_dir_all(&data_dir)?;
     let store = Arc::new(Store::open(&data_dir.join(DATABASE_FILE))?);
     let device_id = store.device_id()?;
