@@ -17,12 +17,13 @@ npm run test:rust        # cargo test: engine, registry, store, startup, service
 | --- | --- | --- |
 | Foreground interval transitions, app switching, idle transitions, sleep/resume gaps, lock screen, clock changes, pause, min-interval filtering, duplicate prevention, invariant fuzzing | `apps/desktop/src-tauri/src/tracker/engine.rs` (unit), `apps/desktop/src-tauri/tests/engine_fixtures.rs` replaying `tests/fixtures/tracking/*.json` | No |
 | Application registry: defaults valid, matching precedence, wildcards, path disambiguation, disabled apps | `apps/desktop/src-tauri/src/registry/` (unit); `tests/unit/validation` (TS side of the same rules) | No |
-| Local database: migrations, idempotent upserts, one open interval per device, crash recovery, export, deletion, settings | `apps/desktop/src-tauri/tests/store_integration.rs` | No |
-| Tracker service with fake probe and clock: restart without duplicates, pause, offline outbox (pending rows) | `apps/desktop/src-tauri/tests/service_integration.rs` | No |
+| Local database: migrations, idempotent upserts, one open interval per device, crash recovery, export, deletion that leaves no recoverable bytes in the file or WAL, consent for built-ins added by upgrades, persisted pause, privacy field list = schema | `apps/desktop/src-tauri/tests/store_integration.rs` | No |
+| Tracker service with fake probe and clock: restart without duplicates, pause and timed pause (including across restarts), sleep, onboarding consent, disabling, offline outbox (pending rows), storage failures (simulated with SQLite triggers) never resurrecting a discarded interval or losing buffered writes | `apps/desktop/src-tauri/tests/service_integration.rs` | No |
 | Startup registration (against a scratch registry key, never the real Run key) | `apps/desktop/src-tauri/tests/startup_registry.rs` | **Yes** |
 | Time aggregation, time zones and DST, ranges, overlap resolution, formatting | `tests/unit/time-engine` | No |
 | Settings and application-definition validation | `tests/unit/validation` | No |
 | Cross-package report reconciliation | `tests/integration` | No |
+| Desktop UI pure logic: keyboard shortcuts, routes, status text, chart scales | `tests/unit/desktop` | No |
 
 Phase-2 topics from the requirements (offline sync queue retries, permission checks, note
 autosave, concurrent note updates, workspace isolation, RLS) have no code to test yet. They are
@@ -37,7 +38,9 @@ npm run probe               # prints the foreground app, match, idle seconds and
 npm run probe -- --list     # lists running applications with visible windows and their registry match
 ```
 
-These are `#[ignore]` by default because they need an interactive, unlocked desktop. CI agents
+They include a ghost-window test: a test window stops responding for about 8 seconds and the probe
+must keep reporting the hung app, not `dwm.exe`. These are `#[ignore]` by default because they
+need an interactive, unlocked desktop. CI agents
 and service sessions have no foreground window.
 
 ## 3. Manual Windows verification checklist
