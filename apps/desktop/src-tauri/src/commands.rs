@@ -6,6 +6,7 @@
 //! `#[tauri::command(async)]`), not on the main thread.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,7 @@ use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::app_state::AppState;
-use crate::cloud::account::{AccountStatus, SignUpResult};
+use crate::cloud::account::{AccountError, AccountStatus, SignUpResult};
 use crate::cloud::api::{InvitationCreated, WorkspaceRole};
 use crate::cloud::ledger::SyncLedger;
 use crate::cloud::sync::{SyncCommand, SyncOverview};
@@ -591,58 +592,81 @@ impl std::fmt::Debug for SignUpInput {
     }
 }
 
-#[tauri::command(async)]
-pub fn get_account_status(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
+/// Run a blocking account operation (it may wait on the network for up to the request timeout)
+/// on Tauri's blocking pool instead of an async worker.
+async fn run_blocking<T: Send + 'static>(
+    operation: impl FnOnce() -> Result<T, AccountError> + Send + 'static,
+) -> CommandResult<T> {
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|err| CommandError::internal(format!("The request could not run: {err}")))?
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn get_account_status(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
     Ok(state.account.status())
 }
 
-#[tauri::command(async)]
-pub fn sign_in(state: State<'_, AppState>, input: SignInInput) -> CommandResult<AccountStatus> {
-    Ok(state.account.sign_in(&input.email, &input.password)?)
+#[tauri::command]
+pub async fn sign_in(
+    state: State<'_, AppState>,
+    input: SignInInput,
+) -> CommandResult<AccountStatus> {
+    let account = Arc::clone(&state.account);
+    run_blocking(move || account.sign_in(&input.email, &input.password)).await
 }
 
-#[tauri::command(async)]
-pub fn sign_up(state: State<'_, AppState>, input: SignUpInput) -> CommandResult<SignUpResult> {
-    Ok(state
-        .account
-        .sign_up(&input.email, &input.password, &input.display_name)?)
+#[tauri::command]
+pub async fn sign_up(
+    state: State<'_, AppState>,
+    input: SignUpInput,
+) -> CommandResult<SignUpResult> {
+    let account = Arc::clone(&state.account);
+    run_blocking(move || account.sign_up(&input.email, &input.password, &input.display_name)).await
 }
 
-#[tauri::command(async)]
-pub fn sign_out(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
-    Ok(state.account.sign_out()?)
+#[tauri::command]
+pub async fn sign_out(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
+    let account = Arc::clone(&state.account);
+    run_blocking(move || account.sign_out()).await
 }
 
-#[tauri::command(async)]
-pub fn refresh_workspaces(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
-    Ok(state.account.refresh_workspaces()?)
+#[tauri::command]
+pub async fn refresh_workspaces(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
+    let account = Arc::clone(&state.account);
+    run_blocking(move || account.refresh_workspaces()).await
 }
 
-#[tauri::command(async)]
-pub fn create_workspace(state: State<'_, AppState>, name: String) -> CommandResult<AccountStatus> {
-    Ok(state.account.create_workspace(&name)?)
+#[tauri::command]
+pub async fn create_workspace(
+    state: State<'_, AppState>,
+    name: String,
+) -> CommandResult<AccountStatus> {
+    let account = Arc::clone(&state.account);
+    run_blocking(move || account.create_workspace(&name)).await
 }
 
-#[tauri::command(async)]
-pub fn select_sync_workspace(
+#[tauri::command]
+pub async fn select_sync_workspace(
     state: State<'_, AppState>,
     workspace_id: Option<String>,
 ) -> CommandResult<AccountStatus> {
-    Ok(state
-        .account
-        .select_sync_workspace(workspace_id.as_deref())?)
+    let account = Arc::clone(&state.account);
+    run_blocking(move || account.select_sync_workspace(workspace_id.as_deref())).await
 }
 
-#[tauri::command(async)]
-pub fn accept_invitation(
+#[tauri::command]
+pub async fn accept_invitation(
     state: State<'_, AppState>,
     token: String,
 ) -> CommandResult<AccountStatus> {
-    Ok(state.account.accept_invitation(&token)?)
+    let account = Arc::clone(&state.account);
+    run_blocking(move || account.accept_invitation(&token)).await
 }
 
-#[tauri::command(async)]
-pub fn create_invitation(
+#[tauri::command]
+pub async fn create_invitation(
     state: State<'_, AppState>,
     workspace_id: String,
     email: String,
@@ -653,9 +677,8 @@ pub fn create_invitation(
             "Invitations cannot grant ownership.",
         ));
     }
-    Ok(state
-        .account
-        .create_invitation(&workspace_id, &email, role)?)
+    let account = Arc::clone(&state.account);
+    run_blocking(move || account.create_invitation(&workspace_id, &email, role)).await
 }
 
 #[tauri::command]
@@ -664,14 +687,19 @@ pub fn get_sync_status(state: State<'_, AppState>) -> SyncOverview {
 }
 
 /// Run a pass now (ignoring backoff) and return the resulting overview.
-#[tauri::command(async)]
-pub fn sync_now(state: State<'_, AppState>) -> CommandResult<SyncOverview> {
-    let (reply, done) = std::sync::mpsc::channel();
-    state.sync.send(SyncCommand::SyncNow { reply });
-    if done.recv_timeout(SYNC_NOW_TIMEOUT).is_err() {
-        log::warn!("sync pass did not finish in time");
-    }
-    Ok(state.sync.overview())
+#[tauri::command]
+pub async fn sync_now(state: State<'_, AppState>) -> CommandResult<SyncOverview> {
+    let sync = state.sync.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (reply, done) = std::sync::mpsc::channel();
+        sync.send(SyncCommand::SyncNow { reply });
+        if done.recv_timeout(SYNC_NOW_TIMEOUT).is_err() {
+            log::warn!("sync pass did not finish in time");
+        }
+        sync.overview()
+    })
+    .await
+    .map_err(|err| CommandError::internal(format!("The request could not run: {err}")))
 }
 
 /// Explicit consent: give intervals recorded while no account was signed in to the signed-in

@@ -74,13 +74,18 @@ fn base64url_decode(input: &str) -> Option<Vec<u8>> {
 /// True for `sb_secret_…` keys and JWTs whose payload says `"role":"service_role"`.
 fn is_secret_key(key: &str) -> bool {
     let key = key.trim();
-    if key.starts_with("sb_secret_") {
+    if key.to_ascii_lowercase().starts_with("sb_secret_") {
         return true;
     }
     let mut parts = key.split('.');
-    if let (Some(_header), Some(payload), Some(_signature)) = (parts.next(), parts.next(), parts.next()) {
+    if let (Some(_header), Some(payload), Some(_signature)) =
+        (parts.next(), parts.next(), parts.next())
+    {
         if let Some(bytes) = base64url_decode(payload) {
-            let text = String::from_utf8_lossy(&bytes).replace(' ', "");
+            let text: String = String::from_utf8_lossy(&bytes)
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
             return text.contains("\"role\":\"service_role\"");
         }
     }
