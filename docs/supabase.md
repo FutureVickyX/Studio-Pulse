@@ -8,9 +8,11 @@ the local SQLite database stays the source of truth until the server confirms an
 ## 1. Set up a project
 
 1. Create a **new, dedicated** Supabase project for development (free tier is fine).
-2. **Authentication › Sign In / Providers › Email**: keep *Email* enabled. *Confirm email* is
-   recommended for production. With it on, new accounts must click the emailed link before
-   their first sign-in. Invitations are bound to the invitee's email, so confirmation matters.
+2. **Authentication › Sign In / Providers › Email**: keep *Email* enabled and **turn on
+   *Confirm email* for any project real people use**. `accept_invitation` trusts the email in the
+   user's JWT. Without confirmation, someone could register an address they don't own and
+   accept an invitation sent to it. New accounts then click the emailed link before their first
+   sign-in.
 3. Copy `supabase/.env.example` to `supabase/.env.local` (gitignored) and fill in:
 
 | Variable | Where | Used by |
@@ -34,6 +36,7 @@ Migrations live in `supabase/migrations/` and run in filename order:
 | `20261017090000_identity_and_workspaces.sql` | `profiles` (created by a trigger on `auth.users`), `workspaces`, `workspace_members`, `workspace_invitations`, the authorization helpers and the privileged RPCs |
 | `20261017090100_projects_tasks_notes.sql` | `projects`, `tasks`, `notes` (ready for Phase 2B) |
 | `20261017090200_time_entries.sql` | `time_entries` and the idempotent `sync_time_entries` RPC |
+| `20261017090300_membership_hardening.sql` | Fixes found by the RLS suite. Removal revokes the member's pending invitations. Membership changes lock the workspace row and refuse to demote or remove the last owner. Trigger functions are not executable by clients |
 
 ```bash
 npm run supabase:migrate:status
@@ -156,7 +159,25 @@ Each closed interval uploads these fields:
 Never uploaded: window titles, executable paths, keystrokes, screenshots, clipboard, file names or
 contents. This is the Phase 1 privacy boundary, unchanged.
 
-## 9. Troubleshooting
+## 9. Behaviour worth knowing
+
+These are asserted by `tests/integration/supabase`:
+
+- **Removing a member revokes their pending invitations** in that workspace, and so does
+  leaving. Re-invite after removing, not before.
+- **Accepting an invitation while already a member keeps your current role.** Use
+  `set_member_role` to promote someone.
+- **A removed member keeps their own time entries** in that workspace and can still read or
+  delete them, but cannot add new ones.
+- **A removed assignee must be reassigned.** Once an assignee leaves the workspace, a task that
+  still names them can't be edited until the assignee is changed or cleared.
+- **`workspace_invitations` has column-level SELECT without `token_hash`.** List the columns
+  explicitly; `select=*` is refused.
+- **A retry can name a different workspace from the original upload.** That happens if the sync
+  workspace is switched after a lost response. The entry stays where it was first uploaded and
+  is reported `synced` (`already present`). Nothing is duplicated or moved.
+
+## 10. Troubleshooting
 
 | Symptom | Cause |
 | --- | --- |
