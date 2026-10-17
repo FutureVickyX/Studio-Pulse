@@ -66,7 +66,14 @@ The script creates three throwaway confirmed users with the secret key, locally.
 - sync is idempotent, with no duplicates after a retry;
 - invalid entries are rejected individually.
 
-It deletes everything it created, even when a check fails. Each check prints PASS or FAIL, and
+It deletes everything it created, even when a check fails.
+
+`--keep-user` keeps one dedicated live-test user and workspace for the Rust live test
+(`cargo test --test supabase_live -- --ignored`). Its credentials are written to the gitignored
+`supabase/.live-test.local`; delete them later with `--delete-live-user`. If the database
+certificate doesn't verify against the system CAs, set `SUPABASE_DB_SSL_CA` to Supabase's CA
+certificate (Database settings). `--ssl-no-verify` is an explicit, warned opt-in. Details are in
+[scripts/supabase/README.md](../scripts/supabase/README.md). Each check prints PASS or FAIL, and
 any failure gives a non-zero exit code.
 
 ## 4. Build the desktop app against the project

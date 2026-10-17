@@ -9,8 +9,8 @@ foreground, separates **active** time from **idle** time, and shows honest daily
 Nothing is uploaded, nothing is hidden, and nothing beyond the application name and timing is
 collected.
 
-> **Status: Phase 1 — desktop tracking MVP (Windows 10/11).** Tasks, notes, projects, team
-> workspaces and sync are Phase 2. Quick capture and manual time entries are Phase 3. macOS and
+> **Status: Phase 1 (desktop tracking) and Phase 2A (Supabase accounts, workspaces, RLS and
+> desktop sync) on Windows 10/11.** Shared projects, tasks and notes UI is Phase 2B. Quick capture and manual time entries are Phase 3. macOS and
 > Linux are not supported.
 
 ## What Phase 1 does
@@ -86,8 +86,8 @@ run the installer, sign out/in or reboot with launch at login enabled, and check
 | `packages/validation` | zod schemas for settings, applications and inputs |
 | `packages/time-engine` | Reporting maths: ranges, time zones, day splitting, aggregation |
 | `packages/ui` | Design tokens, React primitives, SVG charts |
-| `packages/database` | Phase 2 Supabase client (placeholder) |
-| `supabase/` | Phase 2 migrations and policies (placeholder) |
+| `packages/database` | Typed Supabase client factory, `Database` types matching the migrations, publishable-key-only config validation |
+| `supabase/` | Ordered Postgres migrations with RLS and RPCs (Phase 2A) — see [docs/supabase.md](docs/supabase.md) |
 | `tests/` | TS unit and integration tests, plus shared tracking scenario fixtures |
 | `docs/` | [Architecture](docs/architecture.md), [installation](docs/installation.md), [privacy](docs/privacy.md), [testing](docs/testing.md) |
 
