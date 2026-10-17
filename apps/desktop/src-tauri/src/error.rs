@@ -3,6 +3,8 @@
 
 use serde::Serialize;
 
+use crate::cloud::account::AccountError;
+use crate::cloud::api::RemoteError;
 use crate::startup::StartupError;
 use crate::store::StoreError;
 
@@ -15,6 +17,17 @@ pub enum ErrorCode {
     Storage,
     Platform,
     Internal,
+    /// This build has no (valid) Supabase configuration.
+    NotConfigured,
+    /// No session, or the session expired: sign in.
+    Unauthenticated,
+    /// Signed in but not allowed (e.g. not a member of the workspace).
+    Forbidden,
+    /// Supabase could not be reached; nothing was lost, it will be retried.
+    Network,
+    RateLimited,
+    /// Any other error reported by Supabase.
+    Remote,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, thiserror::Error)]
@@ -60,6 +73,29 @@ impl From<StoreError> for CommandError {
                 )
             }
         }
+    }
+}
+
+impl From<AccountError> for CommandError {
+    fn from(err: AccountError) -> Self {
+        let message = err.to_string();
+        let code = match &err {
+            AccountError::NotConfigured(_) => ErrorCode::NotConfigured,
+            AccountError::NotSignedIn => ErrorCode::Unauthenticated,
+            AccountError::Invalid(_) => ErrorCode::Validation,
+            AccountError::Local(_) => ErrorCode::Storage,
+            AccountError::Remote(remote) => match remote {
+                RemoteError::Network(_) | RemoteError::Server(_) => ErrorCode::Network,
+                RemoteError::Unauthorized => ErrorCode::Unauthenticated,
+                RemoteError::InvalidCredentials
+                | RemoteError::EmailNotConfirmed
+                | RemoteError::Rejected(_) => ErrorCode::Validation,
+                RemoteError::Forbidden(_) => ErrorCode::Forbidden,
+                RemoteError::NotFound(_) => ErrorCode::NotFound,
+                RemoteError::RateLimited { .. } => ErrorCode::RateLimited,
+            },
+        };
+        Self::new(code, message)
     }
 }
 

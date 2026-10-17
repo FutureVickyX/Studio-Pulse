@@ -29,6 +29,11 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::app_state::AppState;
+use crate::cloud::account::AccountManager;
+use crate::cloud::api::RemoteApi;
+use crate::cloud::credentials::{CredentialStore, MemoryCredentialStore, WindowsCredentialStore};
+use crate::cloud::ledger::SyncLedger;
+use crate::cloud::sync::{SyncCommand, SyncCore, SyncHandle, SyncSettings};
 use crate::registry::Registry;
 use crate::settings::Settings;
 use crate::startup::StartupConfig;
@@ -43,10 +48,11 @@ pub const DATABASE_FILE: &str = "studio-pulse.sqlite3";
 /// Tracker poll period.
 const POLL_MS: u64 = 1_000;
 
-/// Bridges tracker callbacks to Tauri events, the tray and notifications.
+/// Bridges tracker callbacks to Tauri events, the tray, notifications and the sync service.
 struct ShellObserver {
     app: AppHandle,
     settings: Arc<RwLock<Settings>>,
+    sync: SyncHandle,
 }
 
 impl ShellObserver {
@@ -70,6 +76,8 @@ impl TrackerObserver for ShellObserver {
             commands::EVENT_EVENTS_CHANGED,
             serde_json::json!({ "at": at }),
         );
+        // New or closed intervals may be ready to upload (debounced by the sync thread).
+        self.sync.send(SyncCommand::Kick);
     }
 
     fn auto_resumed(&self) {
@@ -94,6 +102,85 @@ fn data_directory(app: &tauri::App) -> tauri::Result<std::path::PathBuf> {
         }
     }
     app.path().app_data_dir()
+}
+
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+/// A small xorshift generator for backoff jitter (no cryptographic use).
+fn jitter_source() -> Box<dyn FnMut() -> f64 + Send> {
+    let mut state = (now_ms() as u64) | 1;
+    Box::new(move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1u64 << 53) as f64
+    })
+}
+
+/// Phase 2A: the account manager and the sync thread. Without a valid Supabase configuration both
+/// still exist (state `notConfigured` / phase `disabled`) so the UI can explain why.
+fn start_cloud(
+    app: &AppHandle,
+    store: &Arc<Store>,
+) -> std::io::Result<(Arc<AccountManager>, SyncHandle)> {
+    let config = cloud::config::load();
+    let (api, credentials): (Option<Arc<dyn RemoteApi>>, Arc<dyn CredentialStore>) = match &config {
+        Ok(cfg) => match cloud::http::SupabaseHttp::new(cfg.clone()) {
+            Ok(http) => (
+                Some(Arc::new(http) as Arc<dyn RemoteApi>),
+                Arc::new(WindowsCredentialStore::new(&cfg.project_ref())),
+            ),
+            Err(err) => {
+                log::error!("could not create the Supabase client: {err}");
+                (None, Arc::new(MemoryCredentialStore::default()))
+            }
+        },
+        Err(err) => {
+            log::info!("sync disabled: {err}");
+            (None, Arc::new(MemoryCredentialStore::default()))
+        }
+    };
+    let ledger: Arc<dyn SyncLedger> = store.clone();
+    let account = Arc::new(AccountManager::new(
+        config,
+        api.clone(),
+        credentials,
+        Arc::clone(&ledger),
+        Box::new(now_ms),
+    ));
+
+    let core = SyncCore::new(
+        ledger,
+        Arc::clone(&account),
+        api,
+        SyncSettings::default(),
+        Box::new(now_ms),
+        jitter_source(),
+    );
+    let sync_app = app.clone();
+    let sync = cloud::sync::spawn(
+        core,
+        Box::new(move |overview| {
+            let _ = sync_app.emit(commands::EVENT_SYNC_STATUS, overview);
+        }),
+    )?;
+
+    let account_app = app.clone();
+    let account_sync = sync.clone();
+    account.set_observer(Box::new(move |status| {
+        let _ = account_app.emit(commands::EVENT_ACCOUNT_CHANGED, status);
+        account_sync.send(SyncCommand::AccountChanged);
+    }));
+
+    // Restoring the session may wait on the network: never on the startup path.
+    let restoring = Arc::clone(&account);
+    std::thread::Builder::new()
+        .name("studio-pulse-account-restore".into())
+        .spawn(move || restoring.restore())?;
+
+    Ok((account, sync))
 }
 
 /// Open the store, recover, build the tracker, tray and windows. Runs inside Tauri's `setup`.
@@ -124,6 +211,8 @@ fn initialise(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let tray_state = tray::create(&handle)?;
     app.manage(tray_state);
 
+    let (account, sync) = start_cloud(&handle, &store)?;
+
     let core = TrackerCore::new(TrackerDeps {
         store: Arc::clone(&store),
         probe: platform::create_probe(),
@@ -134,6 +223,7 @@ fn initialise(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         observer: Box::new(ShellObserver {
             app: handle.clone(),
             settings: Arc::clone(&settings_lock),
+            sync: sync.clone(),
         }),
     })?;
     let initial_status = core.status();
@@ -149,6 +239,8 @@ fn initialise(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         startup: StartupConfig::default(),
         launched_at_login,
         data_dir,
+        account,
+        sync,
     });
 
     window_manager::apply_theme(&handle, settings.general.theme);
@@ -209,7 +301,8 @@ fn show_fatal_error(err: &dyn std::error::Error) {
     eprintln!("{text}");
 }
 
-/// Close the open interval and stop the tracker thread before the process exits.
+/// Close the open interval and stop the tracker thread, then stop the sync thread, before the
+/// process exits. Pending uploads stay in the local outbox for the next launch.
 fn shutdown_tracker(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         if state
@@ -218,6 +311,14 @@ fn shutdown_tracker(app: &AppHandle) {
             .is_none()
         {
             log::warn!("tracker did not confirm shutdown; the last checkpoint will be recovered on next start");
+        }
+        let (reply, done) = std::sync::mpsc::channel();
+        state.sync.send(SyncCommand::Shutdown { reply });
+        if done
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .is_err()
+        {
+            log::debug!("sync thread did not confirm shutdown");
         }
     }
 }
@@ -277,6 +378,18 @@ pub fn run() {
             commands::show_main_window,
             commands::hide_indicator,
             commands::quit_app,
+            commands::get_account_status,
+            commands::sign_in,
+            commands::sign_up,
+            commands::sign_out,
+            commands::refresh_workspaces,
+            commands::create_workspace,
+            commands::select_sync_workspace,
+            commands::accept_invitation,
+            commands::create_invitation,
+            commands::get_sync_status,
+            commands::sync_now,
+            commands::claim_local_history,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Studio Pulse");

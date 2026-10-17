@@ -436,7 +436,14 @@ export type CommandErrorCode =
   | 'startup_registration'
   | 'storage'
   | 'platform'
-  | 'internal';
+  | 'internal'
+  // Phase 2A (account and sync)
+  | 'not_configured'
+  | 'unauthenticated'
+  | 'forbidden'
+  | 'network'
+  | 'rate_limited'
+  | 'remote';
 
 export interface CommandError {
   code: CommandErrorCode;

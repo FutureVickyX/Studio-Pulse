@@ -13,6 +13,10 @@ use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::app_state::AppState;
+use crate::cloud::account::{AccountStatus, SignUpResult};
+use crate::cloud::api::{InvitationCreated, WorkspaceRole};
+use crate::cloud::ledger::SyncLedger;
+use crate::cloud::sync::{SyncCommand, SyncOverview};
 use crate::error::{CommandError, CommandResult, ErrorCode};
 use crate::platform::{self, ProcessInfo};
 use crate::registry::{ApplicationDefinition, ApplicationInput, MatchOutcome, Registry};
@@ -546,4 +550,141 @@ pub fn hide_indicator(app: AppHandle) {
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     app.exit(0);
+}
+
+// ---- Phase 2A: account, workspaces and sync (main window only) -------------------------------
+//
+// Network calls run on Tauri's async pool, never on the main thread. Passwords and tokens are
+// passed straight to the account manager and never logged; only the one-time invitation code is
+// returned to the UI (to the inviter, to share).
+
+pub const EVENT_ACCOUNT_CHANGED: &str = "account://changed";
+pub const EVENT_SYNC_STATUS: &str = "sync://status";
+
+/// How long `sync_now` waits for the sync thread to finish a pass.
+const SYNC_NOW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SignInInput {
+    pub email: String,
+    pub password: String,
+}
+
+impl std::fmt::Debug for SignInInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignInInput").finish_non_exhaustive()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SignUpInput {
+    pub email: String,
+    pub password: String,
+    pub display_name: String,
+}
+
+impl std::fmt::Debug for SignUpInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignUpInput").finish_non_exhaustive()
+    }
+}
+
+#[tauri::command(async)]
+pub fn get_account_status(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
+    Ok(state.account.status())
+}
+
+#[tauri::command(async)]
+pub fn sign_in(state: State<'_, AppState>, input: SignInInput) -> CommandResult<AccountStatus> {
+    Ok(state.account.sign_in(&input.email, &input.password)?)
+}
+
+#[tauri::command(async)]
+pub fn sign_up(state: State<'_, AppState>, input: SignUpInput) -> CommandResult<SignUpResult> {
+    Ok(state
+        .account
+        .sign_up(&input.email, &input.password, &input.display_name)?)
+}
+
+#[tauri::command(async)]
+pub fn sign_out(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
+    Ok(state.account.sign_out()?)
+}
+
+#[tauri::command(async)]
+pub fn refresh_workspaces(state: State<'_, AppState>) -> CommandResult<AccountStatus> {
+    Ok(state.account.refresh_workspaces()?)
+}
+
+#[tauri::command(async)]
+pub fn create_workspace(state: State<'_, AppState>, name: String) -> CommandResult<AccountStatus> {
+    Ok(state.account.create_workspace(&name)?)
+}
+
+#[tauri::command(async)]
+pub fn select_sync_workspace(
+    state: State<'_, AppState>,
+    workspace_id: Option<String>,
+) -> CommandResult<AccountStatus> {
+    Ok(state
+        .account
+        .select_sync_workspace(workspace_id.as_deref())?)
+}
+
+#[tauri::command(async)]
+pub fn accept_invitation(
+    state: State<'_, AppState>,
+    token: String,
+) -> CommandResult<AccountStatus> {
+    Ok(state.account.accept_invitation(&token)?)
+}
+
+#[tauri::command(async)]
+pub fn create_invitation(
+    state: State<'_, AppState>,
+    workspace_id: String,
+    email: String,
+    role: WorkspaceRole,
+) -> CommandResult<InvitationCreated> {
+    if role == WorkspaceRole::Owner {
+        return Err(CommandError::validation(
+            "Invitations cannot grant ownership.",
+        ));
+    }
+    Ok(state
+        .account
+        .create_invitation(&workspace_id, &email, role)?)
+}
+
+#[tauri::command]
+pub fn get_sync_status(state: State<'_, AppState>) -> SyncOverview {
+    state.sync.overview()
+}
+
+/// Run a pass now (ignoring backoff) and return the resulting overview.
+#[tauri::command(async)]
+pub fn sync_now(state: State<'_, AppState>) -> CommandResult<SyncOverview> {
+    let (reply, done) = std::sync::mpsc::channel();
+    state.sync.send(SyncCommand::SyncNow { reply });
+    if done.recv_timeout(SYNC_NOW_TIMEOUT).is_err() {
+        log::warn!("sync pass did not finish in time");
+    }
+    Ok(state.sync.overview())
+}
+
+/// Explicit consent: give intervals recorded while no account was signed in to the signed-in
+/// account, so they are uploaded to its sync workspace.
+#[tauri::command(async)]
+pub fn claim_local_history(state: State<'_, AppState>) -> CommandResult<SyncOverview> {
+    let user_id = state
+        .account
+        .current_user_id()
+        .ok_or_else(|| CommandError::new(ErrorCode::Unauthenticated, "Sign in first."))?;
+    let claimed = SyncLedger::claim_unowned(state.store.as_ref(), &user_id)
+        .map_err(|err| CommandError::new(ErrorCode::Storage, err.to_string()))?;
+    log::debug!("claimed {claimed} interval(s) recorded while signed out");
+    state.sync.send(SyncCommand::AccountChanged);
+    Ok(state.sync.overview())
 }

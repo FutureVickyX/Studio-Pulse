@@ -3,6 +3,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
+use crate::cloud::account::AccountManager;
+use crate::cloud::sync::SyncHandle;
 use crate::registry::Registry;
 use crate::settings::Settings;
 use crate::startup::StartupConfig;
@@ -18,6 +20,10 @@ pub struct AppState {
     pub startup: StartupConfig,
     pub launched_at_login: bool,
     pub data_dir: PathBuf,
+    /// Phase 2A: the Supabase account (sign-in state, memberships, sync workspace).
+    pub account: Arc<AccountManager>,
+    /// Phase 2A: the background uploader.
+    pub sync: SyncHandle,
 }
 
 impl AppState {

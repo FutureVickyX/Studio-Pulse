@@ -28,6 +28,18 @@
     "allow-delete-tracking-events",
     "allow-get-app-info",
     "allow-show-main-window",
-    "allow-quit-app"
+    "allow-quit-app",
+    "allow-get-account-status",
+    "allow-sign-in",
+    "allow-sign-up",
+    "allow-sign-out",
+    "allow-refresh-workspaces",
+    "allow-create-workspace",
+    "allow-select-sync-workspace",
+    "allow-accept-invitation",
+    "allow-create-invitation",
+    "allow-get-sync-status",
+    "allow-sync-now",
+    "allow-claim-local-history"
   ]
 }
