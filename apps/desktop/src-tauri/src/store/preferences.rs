@@ -1,4 +1,5 @@
-//! The `meta` table (device id) and the `preferences` table (settings document).
+//! The `meta` table (device id, pause, sync bookkeeping) and the `preferences` table (settings
+//! document).
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -12,6 +13,12 @@ const SETTINGS_KEY: &str = "settings";
 /// `until-resumed` or the UTC epoch ms a timed pause ends. Absent = not paused.
 const PAUSE_KEY: &str = "tracker_pause";
 const PAUSE_UNTIL_RESUMED: &str = "until-resumed";
+/// The signed-in account that owns intervals written from now on. Absent = signed out.
+pub(super) const ACCOUNT_USER_KEY: &str = "account_user_id";
+/// The workspace this device uploads to. Absent = none chosen.
+pub(super) const SYNC_WORKSPACE_KEY: &str = "sync_workspace_id";
+/// UTC epoch ms of the last sync pass that completed successfully. Absent = never.
+pub(super) const LAST_SYNC_SUCCESS_KEY: &str = "last_sync_success_ms";
 
 /// The device id, generated (UUIDv4) and stored on first use.
 ///
@@ -30,14 +37,32 @@ pub(super) fn device_id(conn: &Connection) -> StoreResult<String> {
         .ok_or_else(|| StoreError::Invalid("the device id could not be stored".to_owned()))
 }
 
-fn read_meta(conn: &Connection, key: &str) -> StoreResult<Option<String>> {
+/// The `meta` value stored under `key`, if any. Cached: the tracker's upsert reads the account
+/// on every checkpoint.
+pub(super) fn read_meta(conn: &Connection, key: &str) -> StoreResult<Option<String>> {
     Ok(conn
-        .query_row(
-            "SELECT value FROM meta WHERE key = ?1",
-            params![key],
-            |row| row.get(0),
-        )
+        .prepare_cached("SELECT value FROM meta WHERE key = ?1")?
+        .query_row(params![key], |row| row.get(0))
         .optional()?)
+}
+
+/// Store (`Some`, replacing any previous value) or remove (`None`) the `meta` value of `key`.
+pub(super) fn write_meta(conn: &Connection, key: &str, value: Option<&str>) -> StoreResult<()> {
+    match value {
+        None => conn.execute("DELETE FROM meta WHERE key = ?1", params![key])?,
+        Some(value) => conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?,
+    };
+    Ok(())
+}
+
+/// The account that owns intervals written from now on (`None` = signed out). Read by the
+/// tracker's upsert inside its own transaction, so a batch is stamped consistently.
+pub(super) fn account_user(conn: &Connection) -> StoreResult<Option<String>> {
+    read_meta(conn, ACCOUNT_USER_KEY)
 }
 
 /// The persisted user pause, if any. An unreadable value is logged and treated as "paused until
@@ -60,23 +85,11 @@ pub(super) fn load_pause(conn: &Connection) -> StoreResult<Option<PauseRecord>> 
 
 /// Persist (`Some`) or clear (`None`) the user pause.
 pub(super) fn save_pause(conn: &Connection, pause: Option<PauseRecord>) -> StoreResult<()> {
-    match pause {
-        None => {
-            conn.execute("DELETE FROM meta WHERE key = ?1", params![PAUSE_KEY])?;
-        }
-        Some(record) => {
-            let value = match record {
-                PauseRecord::UntilResumed => PAUSE_UNTIL_RESUMED.to_owned(),
-                PauseRecord::Until(until) => until.to_string(),
-            };
-            conn.execute(
-                "INSERT INTO meta (key, value) VALUES (?1, ?2)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                params![PAUSE_KEY, value],
-            )?;
-        }
-    }
-    Ok(())
+    let value = pause.map(|record| match record {
+        PauseRecord::UntilResumed => PAUSE_UNTIL_RESUMED.to_owned(),
+        PauseRecord::Until(until) => until.to_string(),
+    });
+    write_meta(conn, PAUSE_KEY, value.as_deref())
 }
 
 /// Stored settings, or defaults when absent or invalid (logged; the stored document is kept
