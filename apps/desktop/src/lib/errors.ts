@@ -6,14 +6,23 @@
 
 import type { CommandError, CommandErrorCode } from '@studio-pulse/shared-types';
 
-const ERROR_CODES: ReadonlySet<CommandErrorCode> = new Set<CommandErrorCode>([
-  'validation',
-  'not_found',
-  'startup_registration',
-  'storage',
-  'platform',
-  'internal',
-]);
+/** Every code Rust may send. A `Record` so that a code added to the contract fails to compile here. */
+const KNOWN_CODES: Readonly<Record<CommandErrorCode, true>> = {
+  validation: true,
+  not_found: true,
+  startup_registration: true,
+  storage: true,
+  platform: true,
+  internal: true,
+  not_configured: true,
+  unauthenticated: true,
+  forbidden: true,
+  network: true,
+  rate_limited: true,
+  remote: true,
+};
+
+const ERROR_CODES: ReadonlySet<CommandErrorCode> = new Set(Object.keys(KNOWN_CODES) as CommandErrorCode[]);
 
 export const FALLBACK_ERROR_MESSAGE = 'Something went wrong. Try again.';
 

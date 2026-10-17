@@ -298,3 +298,43 @@ export const IconFolderOpen = createIcon(
     <path d="M2.75 14.75 4.6 9.1A1.5 1.5 0 0 1 6 8.1h10.4a.9.9 0 0 1 .86 1.18l-1.6 5a1.5 1.5 0 0 1-1.43 1.05H4.25" />
   </>,
 );
+
+export const IconCopy = createIcon(
+  'Copy',
+  <>
+    <rect x="7" y="7" width="9.75" height="9.75" rx="1.75" />
+    <path d="M13 7V4.75A1.5 1.5 0 0 0 11.5 3.25H4.75a1.5 1.5 0 0 0-1.5 1.5v6.75A1.5 1.5 0 0 0 4.75 13H7" />
+  </>,
+);
+
+export const IconSignOut = createIcon(
+  'SignOut',
+  <>
+    <path d="M8 16.75H5a1.75 1.75 0 0 1-1.75-1.75V5A1.75 1.75 0 0 1 5 3.25h3" />
+    <path d="m12.75 13.5 3.5-3.5-3.5-3.5M16.25 10H8" />
+  </>,
+);
+
+export const IconEye = createIcon(
+  'Eye',
+  <>
+    <path d="M2.5 10s2.75-5.25 7.5-5.25S17.5 10 17.5 10s-2.75 5.25-7.5 5.25S2.5 10 2.5 10z" />
+    <circle cx="10" cy="10" r="2.25" />
+  </>,
+);
+
+export const IconEyeOff = createIcon(
+  'EyeOff',
+  <>
+    <path d="M8.2 4.95A7.6 7.6 0 0 1 10 4.75c4.75 0 7.5 5.25 7.5 5.25a13.6 13.6 0 0 1-2.15 2.85M12.1 14.9a7.4 7.4 0 0 1-2.1.35c-4.75 0-7.5-5.25-7.5-5.25a13.4 13.4 0 0 1 3.1-3.65" />
+    <path d="M8.4 8.4a2.25 2.25 0 0 0 3.2 3.2M3.25 3.25l13.5 13.5" />
+  </>,
+);
+
+export const IconUserPlus = createIcon(
+  'UserPlus',
+  <>
+    <circle cx="8.25" cy="6.75" r="3" />
+    <path d="M2.75 16.5a5.5 5.5 0 0 1 9.4-3.9M15.25 11.5v5M12.75 14h5" />
+  </>,
+);

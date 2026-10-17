@@ -154,7 +154,8 @@ function WelcomeStep({ headingRef }: { headingRef: HeadingRef }) {
         <span className="app-inline-icon">
           <IconShield size={14} />
         </span>
-        Your data stays on this device in this version. Nothing is recorded until you finish setup.
+        Your data stays on this device unless you later sign in and choose a workspace to sync with. Nothing is
+        recorded until you finish setup.
       </Banner>
     </>
   );

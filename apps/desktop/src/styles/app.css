@@ -280,6 +280,7 @@
 .app-sidebar__footer {
   margin-top: auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
@@ -293,11 +294,29 @@
   font-size: 10px;
 }
 
-.app-sidebar__local {
+/* Sync state: quiet text that opens Settings › Sync; wraps under the shortcuts button when long. */
+.app-sidebar__sync {
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
   font-size: var(--sp-text-xs);
   color: var(--sp-text-faint);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: 4px;
+}
+
+button.app-sidebar__sync:hover {
+  color: var(--sp-text-muted);
+  background: var(--sp-hover);
+}
+
+.app-sidebar__sync[data-emphasis='attention'] {
+  color: var(--sp-warning-text);
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -1616,4 +1635,244 @@
   border-radius: var(--sp-radius-md);
   border: 1px solid var(--sp-border);
   background: var(--sp-surface-2);
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Account, workspace and sync (Settings › Sync, Settings › Workspace, Privacy)               */
+/* ------------------------------------------------------------------------------------------ */
+
+.app-auth {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 380px;
+}
+
+.app-auth__notice {
+  margin-bottom: 14px;
+}
+
+.app-auth__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.app-auth__switch {
+  font-size: var(--sp-text-sm);
+  color: var(--sp-text-muted);
+}
+
+.app-auth .app-footnote {
+  margin-top: -2px;
+}
+
+.app-password {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.app-password__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-account__avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--sp-accent-border);
+  background: var(--sp-accent-soft);
+  color: var(--sp-accent-text);
+  font-weight: 650;
+}
+
+.app-account__text {
+  min-width: 0;
+}
+
+.app-account__name {
+  font-weight: 600;
+}
+
+.app-account__email {
+  font-size: var(--sp-text-sm);
+  color: var(--sp-text-muted);
+}
+
+/* Explicit consent for history recorded while signed out. */
+.app-consent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--sp-radius-lg);
+  border: 1px solid var(--sp-accent-border);
+  background: var(--sp-accent-soft);
+}
+
+.app-consent__title {
+  font-size: var(--sp-text-lg);
+  font-weight: 600;
+}
+
+.app-consent__text {
+  color: var(--sp-text);
+  max-width: 640px;
+}
+
+.app-consent__hint {
+  font-size: var(--sp-text-sm);
+  color: var(--sp-text-muted);
+  max-width: 640px;
+}
+
+.app-consent .app-button-row {
+  margin-top: 4px;
+}
+
+.app-cloud__select {
+  width: 300px;
+  max-width: 100%;
+}
+
+.app-cloud__forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px 28px;
+}
+
+.app-cloud__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-cloud__form .app-list-title {
+  margin: 0;
+}
+
+.app-cloud__detail {
+  margin-top: 8px;
+}
+
+.app-cloud__note-actions {
+  margin-top: 10px;
+}
+
+.app-cloud__note-actions:empty {
+  display: none;
+}
+
+.app-sync-phase {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-sync-phase + .sp-banner {
+  margin-top: 12px;
+}
+
+.app-sync-footnote {
+  margin-top: 12px;
+}
+
+.app-facts__note {
+  margin-top: 4px;
+  font-size: var(--sp-text-sm);
+  color: var(--sp-text-faint);
+  max-width: 420px;
+}
+
+.app-invite {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px auto;
+  align-items: end;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.app-invite__submit {
+  display: flex;
+}
+
+@media (max-width: 760px) {
+  .app-invite {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.app-invite-code {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: var(--sp-radius-md);
+  border: 1px solid var(--sp-border-strong);
+  background: var(--sp-surface-2);
+  max-width: 720px;
+}
+
+.app-invite-code__title {
+  color: var(--sp-text);
+}
+
+.app-invite-code__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.app-invite-code__value {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-invite-code__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: var(--sp-text-sm);
+  color: var(--sp-text-muted);
+}
+
+.app-sharing-state {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: var(--sp-radius-sm);
+  border: 1px solid var(--sp-border);
+  background: var(--sp-surface-2);
+  color: var(--sp-text);
+  max-width: 760px;
+}
+
+.app-fields--spaced {
+  margin-top: 12px;
+}
+
+.app-sharing-footnote {
+  margin-top: 12px;
+}
+
+.app-sharing-footnote code {
+  font-size: 11px;
 }

@@ -3,7 +3,21 @@ import type { CommandErrorCode } from '@studio-pulse/shared-types';
 
 import { ApiError, FALLBACK_ERROR_MESSAGE, toCommandError } from '../../../apps/desktop/src/lib/errors';
 
-const CODES: readonly CommandErrorCode[] = ['validation', 'not_found', 'startup_registration', 'storage', 'platform', 'internal'];
+const CODES: readonly CommandErrorCode[] = [
+  'validation',
+  'not_found',
+  'startup_registration',
+  'storage',
+  'platform',
+  'internal',
+  // Phase 2A (account and sync)
+  'not_configured',
+  'unauthenticated',
+  'forbidden',
+  'network',
+  'rate_limited',
+  'remote',
+];
 
 describe('toCommandError', () => {
   it.each(CODES)('keeps a serialized Rust CommandError with code %s', (code) => {

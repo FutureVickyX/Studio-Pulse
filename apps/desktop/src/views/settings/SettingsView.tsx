@@ -8,9 +8,10 @@ import type { SettingsTab } from '../../lib/routes';
 import { AboutSettings } from './AboutSettings';
 import { ApplicationsSettings } from './ApplicationsSettings';
 import { GeneralSettings } from './GeneralSettings';
-import { SyncSettings, WorkspaceSettings } from './PhaseTwoSettings';
 import { PrivacySettings } from './PrivacySettings';
+import { SyncSettings } from './SyncSettings';
 import { TrackingSettings } from './TrackingSettings';
+import { WorkspaceSettings } from './WorkspaceSettings';
 
 export function SettingsView({ tab, onNavigate }: { tab: SettingsTab; onNavigate: (route: Route) => void }) {
   const settings = useSettings();
@@ -45,8 +46,8 @@ export function SettingsView({ tab, onNavigate }: { tab: SettingsTab; onNavigate
           {tab === 'tracking' ? needsSettings((value) => <TrackingSettings settings={value} />) : null}
           {tab === 'applications' ? <ApplicationsSettings /> : null}
           {tab === 'privacy' ? <PrivacySettings /> : null}
-          {tab === 'workspace' ? <WorkspaceSettings /> : null}
-          {tab === 'sync' ? <SyncSettings /> : null}
+          {tab === 'workspace' ? <WorkspaceSettings onNavigate={onNavigate} /> : null}
+          {tab === 'sync' ? <SyncSettings onNavigate={onNavigate} /> : null}
           {tab === 'about' ? <AboutSettings /> : null}
         </ErrorBoundary>
       </section>

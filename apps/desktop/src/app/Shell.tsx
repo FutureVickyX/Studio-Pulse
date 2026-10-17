@@ -21,14 +21,16 @@ import {
 import type { ReactNode } from 'react';
 import { ErrorBanner, ErrorBoundary, LiveDuration, StatusLabel } from '../components/common';
 import { PauseControl } from '../components/PauseControl';
-import { useTrackerActions, useTrackerStatus } from '../hooks/useLive';
+import { useAccount, useSyncStatus } from '../hooks/useCloud';
+import { useNow, useTrackerActions, useTrackerStatus } from '../hooks/useLive';
 import { subscribe } from '../lib/api';
-import { clockTime } from '../lib/format';
+import { clockTime, count } from '../lib/format';
 import { matchShortcut, phaseTwoShortcutNote, SHORTCUTS } from '../lib/keyboard';
 import { isRoute, NAV_ITEMS, resolveNavigation, sectionOf, settingsTabOf } from '../lib/routes';
 import type { Section } from '../lib/routes';
 import { describeStatus, hasLiveSession, pauseAction } from '../lib/status';
 import { trackerStatusStore } from '../lib/stores';
+import { sidebarSyncLabel } from '../lib/sync';
 import { HomeView } from '../views/HomeView';
 import { SettingsView } from '../views/settings/SettingsView';
 import { TimeView } from '../views/TimeView';
@@ -195,11 +197,41 @@ function Sidebar({
           Shortcuts
           <Kbd>?</Kbd>
         </Button>
-        <span className="app-sidebar__local" title="Nothing leaves this device in this version">
-          Local only
-        </span>
+        <SyncFooterStatus onNavigate={onNavigate} />
       </div>
     </aside>
+  );
+}
+
+/**
+ * Subtle one-line sync state in the sidebar footer ("Local only", "Synced 2 min ago", "3 waiting
+ * to sync", "Sync paused — sign in"). Opens Settings › Sync. Shows nothing while the state is
+ * unknown rather than guessing.
+ */
+function SyncFooterStatus({ onNavigate }: { onNavigate: (route: Route) => void }) {
+  const account = useAccount();
+  const sync = useSyncStatus();
+  const now = useNow(30_000);
+  const label = sidebarSyncLabel({ account: account.data?.state, overview: sync.data, nowMs: now, formatCount: count });
+  if (!label) {
+    const failure = account.error ?? (account.data?.state === 'signedIn' ? sync.error : null);
+    return failure ? (
+      <span className="app-sidebar__sync" title={failure.message}>
+        Sync status unavailable
+      </span>
+    ) : null;
+  }
+  return (
+    <button
+      type="button"
+      className="app-sidebar__sync"
+      data-emphasis={label.emphasis}
+      title={label.title}
+      onClick={() => onNavigate('settings/sync')}
+    >
+      {label.text}
+      <span className="sp-visually-hidden">. {label.title}</span>
+    </button>
   );
 }
 

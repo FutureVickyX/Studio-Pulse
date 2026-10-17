@@ -52,8 +52,8 @@ export function AboutSettings() {
       <Card title="Privacy">
         <p className="app-prose">
           Studio Pulse records which tracked application is in front, when, and whether you were active or idle. It never
-          records screenshots, keystrokes, window titles, file contents, clipboard or browsing. In this version everything
-          stays on this device.
+          records screenshots, keystrokes, window titles, file contents, clipboard or browsing. Everything stays on this
+          device unless you sign in and choose a workspace in Settings › Sync.
         </p>
       </Card>
     </>

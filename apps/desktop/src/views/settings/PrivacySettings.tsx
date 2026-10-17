@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react';
-import type { DataSummary, ExportFormat, ExportResult } from '@studio-pulse/shared-types';
+import type { AccountStatus, DataSummary, ExportFormat, ExportResult } from '@studio-pulse/shared-types';
 import { currentTimeZone } from '@studio-pulse/time-engine';
 import {
   Banner,
@@ -15,9 +15,12 @@ import {
   TextInput,
 } from '@studio-pulse/ui';
 import { ErrorBanner, InlineError } from '../../components/common';
+import { useAccount } from '../../hooks/useCloud';
+import { describeSharing } from '../../lib/account';
 import { call, toCommandError } from '../../lib/api';
 import type { ApiError } from '../../lib/api';
 import { count, dateTime, plural } from '../../lib/format';
+import { UPLOADED_FIELDS, UPLOADED_SUMMARY } from '../../lib/sync';
 
 export const RECORDED: readonly string[] = [
   'Which tracked application was in front (its name)',
@@ -87,10 +90,55 @@ export function RecordedLists() {
   );
 }
 
+function SharingCard({ account }: { account: AccountStatus | undefined }) {
+  // Where this device's records go right now, derived from the account status (never assumed).
+  const current = describeSharing(account);
+  return (
+    <Card title="What leaves this device">
+      <p className="app-prose">
+        <span className="app-inline-icon">
+          <IconShield size={14} />
+        </span>
+        Nothing leaves this device unless you sign in and choose a workspace. Then closed intervals, with the fields below,
+        are uploaded to that workspace, private to you unless the workspace owner allows its owners and admins to see
+        members’ entries. History recorded while no account was signed in is uploaded only if you agree.
+      </p>
+      {current ? (
+        <p className="app-sharing-state" role="status">
+          {current}
+        </p>
+      ) : null}
+      <h3 className="app-list-title">Uploaded for each closed interval, only while syncing</h3>
+      <ul className="app-checklist">
+        {UPLOADED_SUMMARY.map((item) => (
+          <li key={item}>
+            <IconCheck size={14} className="app-checklist__yes" />
+            {item}
+          </li>
+        ))}
+      </ul>
+      <ul className="app-fields app-fields--spaced" aria-label="Uploaded fields">
+        {UPLOADED_FIELDS.map((field) => (
+          <li key={field}>
+            <code className="sp-mono">{field}</code>
+          </li>
+        ))}
+      </ul>
+      <p className="app-footnote app-sharing-footnote">
+        The interval being recorded right now uploads only after it closes. <code className="sp-mono">project_id</code> and{' '}
+        <code className="sp-mono">task_id</code> stay empty: Studio Pulse never assigns time to projects on its own. Things
+        that are never recorded, such as window titles, keystrokes, screenshots or clipboard contents, can never be
+        uploaded.
+      </p>
+    </Card>
+  );
+}
+
 type DeleteChoice = { kind: 'older'; days: 30 | 90 } | { kind: 'all' };
 
 export function PrivacySettings() {
   const data = useDataSummary();
+  const account = useAccount();
   const timeZone = currentTimeZone();
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [exportResult, setExportResult] = useState<{ result: ExportResult | null; format: ExportFormat } | null>(null);
@@ -117,6 +165,8 @@ export function PrivacySettings() {
       <Card title="What is recorded" description="Tracking is automatic and limited to the items on the left.">
         <RecordedLists />
       </Card>
+
+      <SharingCard account={account.data} />
 
       <Card title="Data on this device" actions={<Button size="sm" variant="ghost" onClick={() => void data.reload()} pending={data.loading && !!summary}>Refresh</Button>}>
         {data.error ? (
@@ -223,15 +273,9 @@ export function PrivacySettings() {
         ) : null}
       </Card>
 
-      <Banner tone="info" title="Local only" className="app-privacy-note">
-        <span className="app-inline-icon">
-          <IconShield size={14} />
-        </span>
-        Nothing leaves this device in this version. Team sharing arrives in Phase 2 and will be opt-in and visible here.
-      </Banner>
-
       <DeleteHistoryDialog
         choice={deleteChoice}
+        syncAvailable={account.data !== undefined && account.data.state !== 'notConfigured'}
         onClose={() => setDeleteChoice(null)}
         onDeleted={(deleted) => {
           setDeleteChoice(null);
@@ -247,10 +291,13 @@ const DAY_MS = 86_400_000;
 
 function DeleteHistoryDialog({
   choice,
+  syncAvailable,
   onClose,
   onDeleted,
 }: {
   choice: DeleteChoice | null;
+  /** Sync exists in this build, so some intervals may also have been uploaded to a workspace. */
+  syncAvailable: boolean;
   onClose: () => void;
   onDeleted: (deleted: number) => void;
 }) {
@@ -328,6 +375,12 @@ function DeleteHistoryDialog({
       ) : (
         <p className="app-dialog-text">This cannot be undone. Export first if you want a copy.</p>
       )}
+      {syncAvailable ? (
+        <p className="app-dialog-text">
+          This deletes intervals on this device only, including any that haven’t uploaded yet. Copies already
+          uploaded to a workspace are not removed.
+        </p>
+      ) : null}
     </Dialog>
   );
 }
