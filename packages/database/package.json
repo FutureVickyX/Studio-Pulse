@@ -3,8 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Phase 2: typed Supabase client, generated database types and query helpers. Not implemented in Phase 1.",
+  "description": "Typed Supabase layer: hand-written Database types for supabase/migrations, publishable-key-only config validation and the single supabase-js client factory.",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0"
   }
 }

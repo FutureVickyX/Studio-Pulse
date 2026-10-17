@@ -22,10 +22,18 @@
     "test:windows-live": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test windows_live -- --ignored --test-threads=1",
     "probe": "cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml --example probe --",
     "lint:rust": "cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings",
-    "fmt:rust": "cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml"
+    "fmt:rust": "cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "supabase:migrate": "node scripts/supabase/migrate.mjs",
+    "supabase:migrate:dry-run": "node scripts/supabase/migrate.mjs --dry-run",
+    "supabase:migrate:status": "node scripts/supabase/migrate.mjs --status",
+    "supabase:verify": "node scripts/supabase/verify.mjs",
+    "check:secrets": "node scripts/check-bundle-secrets.mjs"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
     "typescript": "^6.0.3",
     "vitest": "^5.0.4"
   }
