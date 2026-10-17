@@ -27,12 +27,16 @@ mod events;
 mod format;
 mod preferences;
 mod schema;
+mod sync_ledger;
 
 pub use events::record_from_interval;
 pub use format::{export_csv, export_json, iso_from_ms, EXPORT_FORMAT};
 
 /// Ordered migrations, embedded at compile time. Index + 1 = `PRAGMA user_version` after applying.
-pub const MIGRATIONS: &[&str] = &[include_str!("../../migrations/0001_init.sql")];
+pub const MIGRATIONS: &[&str] = &[
+    include_str!("../../migrations/0001_init.sql"),
+    include_str!("../../migrations/0002_sync_outbox.sql"),
+];
 
 /// Every column of `tracking_events`, exactly as stored (shown verbatim in Privacy settings).
 /// A test keeps this in lockstep with the schema.
@@ -56,6 +60,10 @@ pub const STORED_TRACKING_FIELDS: &[&str] = &[
     "revision",
     "created_at_ms",
     "updated_at_ms",
+    "workspace_id",
+    "synced_at_ms",
+    "sync_attempts",
+    "last_sync_error",
 ];
 
 /// A user pause that must survive restarts ("Pause until I resume", "Pause for 1 hour").

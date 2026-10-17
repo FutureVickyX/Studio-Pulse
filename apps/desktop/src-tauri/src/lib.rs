@@ -9,6 +9,7 @@
 //! - [`settings`] user settings
 //! - `commands`, `tray`, `window_manager`, `app_state`: the Tauri shell
 
+pub mod cloud;
 pub mod error;
 pub mod platform;
 pub mod registry;

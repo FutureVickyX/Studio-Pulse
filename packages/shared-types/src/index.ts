@@ -328,6 +328,104 @@ export interface AppInfo {
   launchedAtLogin: boolean;
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// Account, workspaces and sync (Phase 2A) — docs/supabase.md
+// ---------------------------------------------------------------------------------------------
+
+export type WorkspaceRole = 'owner' | 'admin' | 'member';
+export type TimeEntryVisibility = 'private' | 'admins';
+
+/** A workspace the signed-in user is an active member of. */
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  role: WorkspaceRole;
+  timeEntryVisibility: TimeEntryVisibility;
+}
+
+/**
+ * - `notConfigured`  this build has no Supabase project configured (or the configuration is invalid)
+ * - `signedOut`      configured, no account on this device
+ * - `signedIn`       a session exists (it may be offline; sync status says whether uploads work)
+ * - `sessionExpired` the stored session can no longer be refreshed; sign in again. Local data is kept.
+ */
+export type AccountState = 'notConfigured' | 'signedOut' | 'signedIn' | 'sessionExpired';
+
+export interface AccountStatus {
+  state: AccountState;
+  /** Why the build is `notConfigured` (human readable, never contains secrets). */
+  configurationError: string | null;
+  userId: string | null;
+  email: string | null;
+  displayName: string | null;
+  /** Memberships as last fetched from the server (empty while unknown). */
+  workspaces: WorkspaceSummary[];
+  /** The workspace this device uploads time entries to. */
+  syncWorkspaceId: string | null;
+}
+
+export interface SignInInput {
+  email: string;
+  password: string;
+}
+
+export interface SignUpInput {
+  email: string;
+  password: string;
+  displayName: string;
+}
+
+export interface SignUpResult {
+  /** `confirmationRequired`: the project requires email confirmation before the first sign-in. */
+  status: 'signedIn' | 'confirmationRequired';
+  account: AccountStatus;
+}
+
+export interface InvitationCreated {
+  invitationId: string;
+  /** One-time token to hand to the invitee; only its hash is stored. */
+  token: string;
+  expiresAt: IsoDateTime;
+}
+
+/**
+ * - `disabled`          not configured, or signed out with nothing to do
+ * - `idle`              everything uploaded (or waiting for the next interval)
+ * - `syncing`           an upload is running
+ * - `waitingForNetwork` the last attempt could not reach Supabase; retrying with backoff
+ * - `backoff`           a server error; retrying with backoff
+ * - `needsSignIn`       pending records exist but there is no valid session
+ * - `needsWorkspace`    signed in but no sync workspace is selected
+ * - `error`             a problem that needs the user (e.g. removed from the workspace)
+ */
+export type SyncPhase =
+  | 'disabled'
+  | 'idle'
+  | 'syncing'
+  | 'waitingForNetwork'
+  | 'backoff'
+  | 'needsSignIn'
+  | 'needsWorkspace'
+  | 'error';
+
+export interface SyncOverview {
+  phase: SyncPhase;
+  /** Closed intervals of the signed-in user waiting to upload. */
+  pendingCount: number;
+  /** Intervals recorded while no account was signed in; uploaded only after an explicit claim. */
+  unclaimedCount: number;
+  /** Intervals the server rejected permanently (kept locally, never retried automatically). */
+  rejectedCount: number;
+  lastSuccessAt: IsoDateTime | null;
+  lastAttemptAt: IsoDateTime | null;
+  nextAttemptAt: IsoDateTime | null;
+  /** Human readable; never contains tokens, passwords or activity details. */
+  lastError: string | null;
+  workspaceId: string | null;
+  workspaceName: string | null;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Commands (allowlist) — see docs/architecture.md §7
 // ---------------------------------------------------------------------------------------------
@@ -391,6 +489,22 @@ export interface CommandMap {
   show_main_window: { args: { route: Route | null }; result: null };
   hide_indicator: { args: Record<string, never>; result: null };
   quit_app: { args: Record<string, never>; result: null };
+  // Phase 2A — account, workspaces and sync (main window only)
+  get_account_status: { args: Record<string, never>; result: AccountStatus };
+  sign_in: { args: { input: SignInInput }; result: AccountStatus };
+  sign_up: { args: { input: SignUpInput }; result: SignUpResult };
+  sign_out: { args: Record<string, never>; result: AccountStatus };
+  refresh_workspaces: { args: Record<string, never>; result: AccountStatus };
+  create_workspace: { args: { name: string }; result: AccountStatus };
+  select_sync_workspace: { args: { workspaceId: string | null }; result: AccountStatus };
+  accept_invitation: { args: { token: string }; result: AccountStatus };
+  create_invitation: {
+    args: { workspaceId: string; email: string; role: Exclude<WorkspaceRole, 'owner'> };
+    result: InvitationCreated;
+  };
+  get_sync_status: { args: Record<string, never>; result: SyncOverview };
+  sync_now: { args: Record<string, never>; result: SyncOverview };
+  claim_local_history: { args: Record<string, never>; result: SyncOverview };
 }
 
 export type CommandName = keyof CommandMap;
@@ -405,6 +519,8 @@ export const EVENTS = {
   settingsChanged: 'settings://changed',
   applicationsChanged: 'applications://changed',
   navigate: 'app://navigate',
+  accountChanged: 'account://changed',
+  syncStatus: 'sync://status',
 } as const;
 
 export interface EventPayloadMap {
@@ -413,6 +529,8 @@ export interface EventPayloadMap {
   'settings://changed': Settings;
   'applications://changed': ApplicationDefinition[];
   'app://navigate': Route;
+  'account://changed': AccountStatus;
+  'sync://status': SyncOverview;
 }
 
 export type EventName = keyof EventPayloadMap;
