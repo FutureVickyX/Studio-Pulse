@@ -5,6 +5,7 @@ use rusqlite::{params, Connection, Row, Transaction};
 use crate::tracker::{EndReason, EpochMs, Interval, IntervalKind};
 
 use super::format::{iso_from_ms, seconds_from_ms};
+use super::preferences;
 use super::{
     invalid_column, DataSummary, RecoveryReport, StoreError, StoreResult, TrackingEventRecord,
     STORED_TRACKING_FIELDS,
@@ -25,11 +26,15 @@ const SELECT_RECORD: &str = "SELECT id, user_id, device_id, application_id, appl
 
 /// Insert, or update a row that is still open. A closed row is never modified, so replaying a
 /// closed interval or an older open snapshot of it is a no-op.
+///
+/// Ownership (Phase 2A): a newly inserted row takes the signed-in account (`?15`, NULL while
+/// signed out). The update branch deliberately does not list `user_id`: a row keeps the owner it
+/// was first written with, whoever is signed in when it is checkpointed or closed.
 const UPSERT: &str = "INSERT INTO tracking_events (
         id, device_id, user_id, application_id, application_name, kind,
         started_at_ms, ended_at_ms, active_ms, idle_ms, state, end_reason,
         project_id, task_id, source, sync_status, revision, created_at_ms, updated_at_ms)
-    VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, NULL, ?12, ?13, 1, ?14, ?14)
+    VALUES (?1, ?2, ?15, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, NULL, ?12, ?13, 1, ?14, ?14)
     ON CONFLICT(id) DO UPDATE SET
         kind = excluded.kind,
         ended_at_ms = excluded.ended_at_ms,
@@ -44,6 +49,9 @@ const UPSERT: &str = "INSERT INTO tracking_events (
 
 /// Write `intervals` (one transaction, owned by the caller). Closed intervals go first so that
 /// "close A, open B" never trips the one-open-interval-per-device index, whatever the order.
+///
+/// New rows are stamped with the account stored in `meta` (read inside this transaction, so the
+/// whole batch gets the same owner); existing rows keep theirs.
 pub(super) fn upsert(
     tx: &Transaction<'_>,
     device_id: &str,
@@ -53,6 +61,7 @@ pub(super) fn upsert(
     for interval in intervals {
         check_interval(interval)?;
     }
+    let owner = preferences::account_user(tx)?;
     let mut stmt = tx.prepare_cached(UPSERT)?;
     let closed_first = intervals
         .iter()
@@ -74,6 +83,7 @@ pub(super) fn upsert(
             SOURCE_AUTOMATIC,
             SYNC_PENDING,
             now,
+            owner,
         ])?;
     }
     Ok(())
@@ -276,8 +286,11 @@ fn map_record(row: &Row<'_>) -> rusqlite::Result<TrackingEventRecord> {
 /// Build the record the UI sees for an in-memory interval (live overlay of the open interval).
 ///
 /// The record is what the row would look like once written: `source = automatic`,
-/// `sync_status = pending`, no user, project or task. `revision` is `1` because an in-memory
+/// `sync_status = pending`, no project or task. `revision` is `1` because an in-memory
 /// interval does not know how often it has been checkpointed; the UI does not use it.
+/// `user_id` is always `None` for the same reason: the stored row may be owned (stamped when it
+/// was first written while signed in, or claimed later), but the in-memory interval does not
+/// know by whom. The UI does not use it either; the sync outbox reads owners from the database.
 pub fn record_from_interval(interval: &Interval, device_id: &str) -> TrackingEventRecord {
     TrackingEventRecord {
         id: interval.id.clone(),
