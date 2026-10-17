@@ -99,6 +99,13 @@ npm run test:windows-live      # live Win32 tests (interactive desktop session r
 
 See [testing.md](testing.md) for the full manual checklist.
 
+### Building with team sync (Phase 2A)
+
+Sync needs a Supabase project. Set `STUDIO_PULSE_SUPABASE_URL` and
+`STUDIO_PULSE_SUPABASE_PUBLISHABLE_KEY` before `npm run build`. Without them the app tracks
+locally and Settings › Sync explains that sync isn't configured. Setup, migrations and
+verification are in [supabase.md](supabase.md).
+
 ## 4. Where things live
 
 | What | Where |
@@ -106,3 +113,4 @@ See [testing.md](testing.md) for the full manual checklist.
 | Database | `%APPDATA%\com.studiopulse.desktop\studio-pulse.sqlite3` (WAL mode; `-wal`/`-shm` side files) |
 | Logs | `%LOCALAPPDATA%\com.studiopulse.desktop\logs\studio-pulse.log` (rotated at 2 MB; no titles, paths or file names) |
 | Startup entry | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` → `Studio Pulse` (only when enabled) |
+| Sync session (Phase 2A) | Windows Credential Manager → `Studio Pulse/supabase/<project-ref>` (refresh token only; removed on sign-out) |

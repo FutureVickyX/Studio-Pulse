@@ -434,18 +434,29 @@ field, row counts, the database location, export (JSON/CSV) and deletion. See `d
 
 ---
 
-## 14. Phase-2 seams (designed, not built)
+## 14. Phase 2A: Supabase sync (built) and Phase 2B seams
 
-- **Sync** reuses the local `tracking_events` table as an outbox (`sync_status`, `revision`).
-  The server upserts by `id` and keeps the highest `revision`, so retries can't duplicate.
-  Open intervals may be pushed as provisional rows and finalised later.
-- **Identity**: `user_id` is filled on first sign-in for rows created on this device. Session expiry
-  never deletes local rows.
-- **Authorization** lives in Postgres RLS. Detailed `tracking_events` are readable by their owner
-  only. Team reports read aggregated views governed by `workspace_settings.tracking_visibility`.
-  Organisation ids from the client are never trusted.
-- **Notes** use optimistic concurrency (`version` column, compare-and-swap). Conflicts are
-  surfaced and never silently overwritten.
+Phase 2A is built; the full operator guide is [docs/supabase.md](supabase.md).
+
+- **Remote schema** (`supabase/migrations`): `profiles`, `workspaces`, `workspace_members`,
+  `workspace_invitations`, `projects`, `tasks`, `notes`, `time_entries`. RLS is enabled on every
+  table and grants follow least privilege. Membership changes only through role-checked
+  `SECURITY DEFINER` functions.
+- **Sync** (`src-tauri/src/cloud`). The local `tracking_events` table is the outbox. A single
+  sync thread uploads closed, pending intervals of the signed-in user through the
+  `sync_time_entries` RPC, which is idempotent (keyed by the tracker's UUIDv7) and returns one
+  result per entry. Rows are marked `synced` only on confirmation. Invalid rows are kept as
+  `failed`. Transient failures back off (5 s to 15 min, ±20 % jitter). This deliberately differs
+  from the Phase 1 seam note: only **closed** intervals sync, so remote rows are immutable and no
+  revision merge is needed.
+- **Identity**. Sign-in happens in Rust (Supabase Auth REST). The refresh token lives in Windows
+  Credential Manager; the access token stays in memory; the webview never sees either. New
+  intervals are stamped with the signed-in user id. Intervals recorded while signed out are
+  uploaded only after an explicit claim. Session expiry never deletes local rows.
+- **Visibility**. Time entries are private to their owner. A workspace owner can let
+  owners/admins read members' entries (`time_entry_visibility = 'admins'`).
+- **Phase 2B seams**. Projects, tasks and notes tables and policies exist, with note
+  `version`-based conflict detection, but there is no UI yet.
 
 ---
 
