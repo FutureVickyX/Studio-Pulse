@@ -265,7 +265,7 @@ describe('a removed member loses all access to the workspace immediately', () =>
     expect(await visibleIds(db(), w.dave, 'profiles')).toEqual([w.dave.id]);
     expect(ok(await db().query(w.dave, `select * from public.my_workspaces()`))).toEqual([]);
     for (const fn of ['is_workspace_member($1)', `has_workspace_role($1, array['admin']::public.workspace_role[])`]) {
-      const [row] = ok(await db().query<{ v: boolean }>(w.dave, `select public.${fn} as v`, [w.wsA]));
+      const [row] = ok(await db().query<{ v: boolean }>(w.dave, `select private.${fn} as v`, [w.wsA]));
       expect(row?.v, fn).toBe(false);
     }
   });

@@ -128,17 +128,12 @@ function NotConfigured({ configurationError }: { configurationError: string | nu
   );
 }
 
+/**
+ * While signed out, what can be waiting is history linked to no account (recorded while signed
+ * out). It uploads only after a sign-in and an explicit claim, so this is a note, not an alert.
+ */
 function SignedOutHistoryNote({ overview }: { overview: SyncOverview | undefined }) {
-  if (!overview) return null;
-  if (overview.phase === 'needsSignIn') {
-    return (
-      <Banner tone="info" compact>
-        Intervals from an earlier sign-in are waiting to upload. Sign in with that account to continue; until then they
-        stay on this device.
-      </Banner>
-    );
-  }
-  if (overview.unclaimedCount === 0) return null;
+  if (!overview || overview.unclaimedCount === 0) return null;
   return (
     <p className="app-footnote">
       {plural(overview.unclaimedCount, 'interval', 'intervals')} recorded on this device{' '}

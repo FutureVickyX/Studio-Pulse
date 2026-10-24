@@ -293,21 +293,6 @@ export const FUNCTIONS = {
     returns: { kind: 'row', table: 'workspaces' },
     securityDefiner: true,
   },
-  has_workspace_role: {
-    args: { p_workspace_id: req('uuid'), p_roles: req('enum:workspace_role[]') },
-    returns: { kind: 'scalar', type: 'boolean' },
-    securityDefiner: true,
-  },
-  is_active_member: {
-    args: { p_workspace_id: req('uuid'), p_user_id: req('uuid') },
-    returns: { kind: 'scalar', type: 'boolean' },
-    securityDefiner: true,
-  },
-  is_workspace_member: {
-    args: { p_workspace_id: req('uuid') },
-    returns: { kind: 'scalar', type: 'boolean' },
-    securityDefiner: true,
-  },
   my_workspaces: {
     args: {},
     returns: {
@@ -340,11 +325,6 @@ export const FUNCTIONS = {
   set_time_entry_visibility: {
     args: { p_workspace_id: req('uuid'), p_visibility: req('enum:time_entry_visibility') },
     returns: { kind: 'void' },
-    securityDefiner: true,
-  },
-  shares_workspace_with: {
-    args: { p_user_id: req('uuid') },
-    returns: { kind: 'scalar', type: 'boolean' },
     securityDefiner: true,
   },
   sync_time_entries: {

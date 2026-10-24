@@ -135,21 +135,28 @@ const POLICY_COMMANDS: Record<Table, string[]> = {
   workspaces: ['DELETE', 'SELECT', 'UPDATE'],
 };
 
-/** Functions `authenticated` may execute: the RPCs, plus the helpers policies call as the user. */
+/** Functions in `public` that `authenticated` may execute: exactly the RPCs. */
 const AUTHENTICATED_FUNCTIONS = [
   'accept_invitation',
   'create_invitation',
   'create_workspace',
-  'has_workspace_role',
-  'is_active_member',
-  'is_workspace_member',
   'my_workspaces',
   'remove_member',
   'revoke_invitation',
   'set_member_role',
   'set_time_entry_visibility',
-  'shares_workspace_with',
   'sync_time_entries',
+].sort();
+
+/**
+ * The RLS helpers policies call as the user. They live in `private`, which PostgREST does not
+ * expose, so they are not `/rest/v1/rpc/*` endpoints (migration 5/5).
+ */
+const PRIVATE_FUNCTIONS = [
+  'has_workspace_role',
+  'is_active_member',
+  'is_workspace_member',
+  'shares_workspace_with',
 ].sort();
 
 const TRIGGER_FUNCTIONS = [
@@ -157,8 +164,10 @@ const TRIGGER_FUNCTIONS = [
   'notes_bump_version',
   'notes_owner_fixed',
   'prevent_workspace_change',
+  'promote_successor_owner',
   'set_updated_at',
   'tasks_track_completion',
+  'trim_bounded_text',
 ].sort();
 
 /** SECURITY DEFINER exactly where the migrations intend it (sync_time_entries is INVOKER). */
@@ -167,15 +176,12 @@ const SECURITY_DEFINER_FUNCTIONS = [
   'create_invitation',
   'create_workspace',
   'handle_new_user',
-  'has_workspace_role',
-  'is_active_member',
-  'is_workspace_member',
   'my_workspaces',
+  'promote_successor_owner',
   'remove_member',
   'revoke_invitation',
   'set_member_role',
   'set_time_entry_visibility',
-  'shares_workspace_with',
 ].sort();
 
 /** A role with no grants and no memberships: what PUBLIC (every role) can do. */
@@ -238,7 +244,7 @@ interface FunctionInfo {
   nobody: boolean;
 }
 
-async function functions(): Promise<FunctionInfo[]> {
+async function functions(schema: 'public' | 'private' = 'public'): Promise<FunctionInfo[]> {
   return db().admin<FunctionInfo & Record<string, unknown>>(
     `select p.proname as name, p.prosecdef as security_definer, p.proconfig as config,
             r.rolname as owner, r.rolsuper as owner_is_superuser,
@@ -248,8 +254,9 @@ async function functions(): Promise<FunctionInfo[]> {
             has_function_privilege('${NOBODY}', p.oid, 'EXECUTE') as nobody
        from pg_proc p
        join pg_roles r on r.oid = p.proowner
-      where p.pronamespace = 'public'::regnamespace
+      where p.pronamespace = $1::regnamespace
       order by p.proname`,
+    [schema],
   );
 }
 
@@ -286,6 +293,35 @@ describe('tables', () => {
     for (const row of rows) (commands[row.table] ??= []).push(row.cmd);
     for (const list of Object.values(commands)) list.sort();
     expect(commands).toEqual(POLICY_COMMANDS);
+  });
+
+  it('policies evaluate auth.uid() once per statement, as (select auth.uid())', async () => {
+    const rows = await db().admin<{ name: string; qual: string | null; with_check: string | null }>(
+      `select tablename || '.' || policyname as name, qual, with_check
+         from pg_policies where schemaname = 'public' order by 1`,
+    );
+    for (const row of rows) {
+      for (const expression of [row.qual, row.with_check]) {
+        // Postgres prints a scalar subquery as `( SELECT auth.uid() AS uid)`.
+        expect(expression ?? '', row.name).not.toMatch(/(?<!SELECT )auth\.uid\(\)/);
+      }
+    }
+  });
+
+  it('every foreign key has an index leading with its columns', async () => {
+    const rows = await db().admin<{ name: string }>(
+      `select c.conrelid::regclass::text || '.' || c.conname as name
+         from pg_constraint c
+        where c.contype = 'f' and c.connamespace = 'public'::regnamespace
+          and not exists (
+            select 1 from pg_index i
+             where i.indrelid = c.conrelid
+               and (select array_agg(k order by k)
+                      from unnest((string_to_array(i.indkey::text, ' ')::int2[])[1:cardinality(c.conkey)]) k)
+                 = (select array_agg(k order by k) from unnest(c.conkey) k))
+        order by 1`,
+    );
+    expect(rows).toEqual([]);
   });
 
   it('anon and PUBLIC hold no privilege on any table or column', async () => {
@@ -372,6 +408,32 @@ describe('functions', () => {
     }
   });
 
+  it('the RLS helpers live in private: authenticated executes exactly them, anon and PUBLIC none', async () => {
+    const list = await functions('private');
+    expect(list.map((fn) => fn.name).sort()).toEqual(PRIVATE_FUNCTIONS);
+    for (const fn of list) {
+      expect(fn.authenticated, fn.name).toBe(true);
+      expect(fn.anon, fn.name).toBe(false);
+      expect(fn.nobody, fn.name).toBe(false);
+      expect(fn.security_definer, fn.name).toBe(true);
+      expect(fn.config ?? [], fn.name).toContain('search_path=""');
+      expect(fn.owner, fn.name).toBe(MIGRATION_OWNER);
+    }
+    const objects = await db().admin<{ name: string }>(
+      `select relname as name from pg_class where relnamespace = 'private'::regnamespace`,
+    );
+    expect(objects).toEqual([]);
+  });
+
+  it('the RLS helpers are not callable under public (no /rest/v1/rpc endpoint)', async () => {
+    const user = await newUser(db(), 'rpc-prober');
+    for (const name of PRIVATE_FUNCTIONS) {
+      const outcome = await db().query(user, `select public.${name}(null)`);
+      expect(outcome.ok, name).toBe(false);
+      if (!outcome.ok) expect(outcome.error.code, name).toBe('42883');
+    }
+  });
+
   it('trigger functions cannot be called directly', async () => {
     const user = await newUser(db(), 'caller');
     for (const name of TRIGGER_FUNCTIONS) {
@@ -387,13 +449,15 @@ describe('schemas', () => {
       `select r as role, s as schema,
               has_schema_privilege(r, s, 'USAGE') as usage,
               has_schema_privilege(r, s, 'CREATE') as create
-         from unnest(array['anon', 'authenticated']) as r, unnest(array['auth', 'public']) as s
+         from unnest(array['anon', 'authenticated']) as r, unnest(array['auth', 'private', 'public']) as s
         order by 1, 2`,
     );
     expect(rows).toEqual([
       { role: 'anon', schema: 'auth', usage: true, create: false },
+      { role: 'anon', schema: 'private', usage: false, create: false },
       { role: 'anon', schema: 'public', usage: true, create: false },
       { role: 'authenticated', schema: 'auth', usage: true, create: false },
+      { role: 'authenticated', schema: 'private', usage: true, create: false },
       { role: 'authenticated', schema: 'public', usage: true, create: false },
     ]);
     const user = await newUser(db(), 'builder');

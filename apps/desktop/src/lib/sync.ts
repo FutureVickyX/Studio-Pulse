@@ -235,8 +235,16 @@ export function sidebarSyncLabel(input: SidebarSyncInput): SidebarSyncLabel | nu
       return { text: 'Local only', title: 'Sync isn’t configured in this build. Nothing leaves this device.', emphasis: 'quiet' };
     case 'sessionExpired':
       return signInLabel;
-    case 'signedOut':
-      return overview?.phase === 'needsSignIn' ? signInLabel : { text: 'Local only', title: LOCAL_ONLY_TITLE, emphasis: 'quiet' };
+    case 'signedOut': {
+      // Signed out is the local-only mode, never an alert. What can be waiting then is history
+      // linked to no account: it uploads only if someone signs in and chooses to claim it.
+      const unlinked = overview?.unclaimedCount ?? 0;
+      const title =
+        unlinked > 0
+          ? `Not signed in. ${formatCount(unlinked)} ${unlinked === 1 ? 'interval isn’t' : 'intervals aren’t'} linked to any account and stay on this device; after you sign in, you decide whether to upload them.`
+          : LOCAL_ONLY_TITLE;
+      return { text: 'Local only', title, emphasis: 'quiet' };
+    }
     case 'signedIn':
       break;
   }

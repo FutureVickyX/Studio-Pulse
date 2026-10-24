@@ -518,21 +518,6 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      has_workspace_role: {
-        Args: {
-          p_workspace_id: string;
-          p_roles: Database['public']['Enums']['workspace_role'][];
-        };
-        Returns: boolean;
-      };
-      is_active_member: {
-        Args: { p_workspace_id: string; p_user_id: string };
-        Returns: boolean;
-      };
-      is_workspace_member: {
-        Args: { p_workspace_id: string };
-        Returns: boolean;
-      };
       my_workspaces: {
         Args: never;
         Returns: {
@@ -565,10 +550,6 @@ export type Database = {
           p_visibility: Database['public']['Enums']['time_entry_visibility'];
         };
         Returns: undefined;
-      };
-      shares_workspace_with: {
-        Args: { p_user_id: string };
-        Returns: boolean;
       };
       sync_time_entries: {
         /** `p_entries` is a JSON array of `SyncTimeEntryPayload` (at most 500 per call). */

@@ -1022,6 +1022,15 @@ fn deleting_history_removes_outbox_rows_and_their_counts() {
             .unwrap(),
         0
     );
+    // ...and the sync service can tell which uploaded rows were deleted meanwhile (any state
+    // counts as present; unknown ids are simply absent).
+    assert_eq!(
+        f.store
+            .existing_ids(&ids(&["a", "b", "d", "e", "open", "never-recorded"]))
+            .unwrap(),
+        ids(&["b", "d", "e", "open"])
+    );
+    assert!(f.store.existing_ids(&[]).unwrap().is_empty());
     assert!(f
         .store
         .list_all_events()

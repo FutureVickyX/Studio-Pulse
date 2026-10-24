@@ -697,3 +697,46 @@ fn an_unreachable_server_is_a_network_error_without_details() {
         assert!(!text.contains(secret), "{text}");
     }
 }
+
+#[test]
+fn delete_time_entries_filters_by_id_as_the_user_in_chunks() {
+    let ids: Vec<String> = (0..150).map(|_| uuid::Uuid::now_v7().to_string()).collect();
+    let mut sent = ids.clone();
+    sent.push("not-a-uuid".into()); // never a server id: left out of the filter
+    let stub = Stub::serve(vec![raw(204, ""), raw(204, "")]);
+    stub.http().delete_time_entries(ACCESS, &sent).unwrap();
+    let requests = stub.finish();
+    assert_eq!(requests.len(), 2, "100 ids per request");
+    for (request, chunk) in requests.iter().zip(ids.chunks(100)) {
+        assert_eq!(request.method, "DELETE");
+        assert_eq!(
+            request.target,
+            format!("/rest/v1/time_entries?id=in.({})", chunk.join(","))
+        );
+        assert_eq!(request.header("apikey"), Some(KEY));
+        assert_eq!(
+            request.header("authorization").map(str::to_owned),
+            Some(format!("Bearer {ACCESS}"))
+        );
+        assert!(request.body.is_empty());
+    }
+
+    // Nothing to delete: no request at all.
+    let stub = Stub::serve(Vec::new());
+    stub.http()
+        .delete_time_entries(ACCESS, &["junk".to_owned()])
+        .unwrap();
+    assert!(stub.finish().is_empty());
+
+    let stub = Stub::serve(vec![reply(
+        401,
+        json!({"code": "PGRST301", "message": "JWT expired"}),
+    )]);
+    assert_eq!(
+        stub.http()
+            .delete_time_entries(ACCESS, &ids[..1])
+            .unwrap_err(),
+        RemoteError::Unauthorized
+    );
+    stub.finish();
+}

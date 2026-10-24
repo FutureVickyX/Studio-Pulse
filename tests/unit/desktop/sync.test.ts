@@ -224,8 +224,19 @@ describe('sidebarSyncLabel', () => {
   it('asks to sign in when the session expired or pending records need a session', () => {
     expect(label('sessionExpired', overview('needsSignIn'))?.text).toBe('Sync paused — sign in');
     expect(label('sessionExpired', undefined)?.emphasis).toBe('attention');
-    expect(label('signedOut', overview('needsSignIn'))?.text).toBe('Sync paused — sign in');
     expect(label('signedIn', overview('needsSignIn'))?.text).toBe('Sync paused — sign in');
+  });
+
+  it('stays quiet while signed out, even with history linked to no account', () => {
+    // Signed out, the service reports needsSignIn exactly when unowned history exists. That is
+    // local-only mode, not a paused sync: those intervals upload only after a sign-in and a claim.
+    const result = label('signedOut', overview('needsSignIn', { unclaimedCount: 3, pendingCount: 0 }));
+    expect(result?.text).toBe('Local only');
+    expect(result?.emphasis).toBe('quiet');
+    expect(result?.title).toContain('3 intervals aren’t linked to any account');
+    expect(result?.title).not.toContain('earlier sign-in');
+    const one = label('signedOut', overview('needsSignIn', { unclaimedCount: 1, pendingCount: 0 }));
+    expect(one?.title).toContain('1 interval isn’t linked');
   });
 
   it('asks for a workspace when none is selected', () => {

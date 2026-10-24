@@ -342,6 +342,9 @@ fn results_for_ids_that_were_not_sent_are_ignored() {
                 })
                 .collect())
         }
+        fn delete_time_entries(&self, a: &str, ids: &[String]) -> Result<(), RemoteError> {
+            self.0.delete_time_entries(a, ids)
+        }
     }
     let w = World::signed_in_with_workspace();
     let ids = w.ledger.record(2);
@@ -360,6 +363,200 @@ fn results_for_ids_that_were_not_sent_are_ignored() {
         assert_eq!(w.ledger.status_of(id), RowStatus::Pending);
         assert_eq!(attempts(&w, id), 1);
     }
+}
+
+/// Delegates to the fake server and runs `hook(n)` after the n-th upload (0-based) has been
+/// answered by the server but before the client sees the answer: what the user does while a
+/// batch is in flight.
+struct AfterUpload {
+    inner: Arc<FakeRemote>,
+    hook: Box<dyn Fn(usize) + Send + Sync>,
+    uploads: std::sync::atomic::AtomicUsize,
+}
+
+impl AfterUpload {
+    fn new(inner: &Arc<FakeRemote>, hook: impl Fn(usize) + Send + Sync + 'static) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Arc::clone(inner),
+            hook: Box::new(hook),
+            uploads: Default::default(),
+        })
+    }
+}
+
+impl RemoteApi for AfterUpload {
+    fn sign_in_with_password(&self, e: &str, p: &str) -> Result<AuthSession, RemoteError> {
+        self.inner.sign_in_with_password(e, p)
+    }
+    fn sign_up(&self, e: &str, p: &str, d: &str) -> Result<SignUpOutcome, RemoteError> {
+        self.inner.sign_up(e, p, d)
+    }
+    fn refresh_session(&self, r: &str) -> Result<AuthSession, RemoteError> {
+        self.inner.refresh_session(r)
+    }
+    fn sign_out(&self, a: &str) -> Result<(), RemoteError> {
+        self.inner.sign_out(a)
+    }
+    fn my_workspaces(&self, a: &str) -> Result<Vec<WorkspaceSummary>, RemoteError> {
+        self.inner.my_workspaces(a)
+    }
+    fn create_workspace(&self, a: &str, n: &str) -> Result<String, RemoteError> {
+        self.inner.create_workspace(a, n)
+    }
+    fn accept_invitation(&self, a: &str, t: &str) -> Result<String, RemoteError> {
+        self.inner.accept_invitation(a, t)
+    }
+    fn create_invitation(
+        &self,
+        a: &str,
+        w: &str,
+        e: &str,
+        r: WorkspaceRole,
+    ) -> Result<InvitationCreated, RemoteError> {
+        self.inner.create_invitation(a, w, e, r)
+    }
+    fn sync_time_entries(
+        &self,
+        a: &str,
+        w: &str,
+        entries: &[RemoteTimeEntry],
+    ) -> Result<Vec<EntryResult>, RemoteError> {
+        let result = self.inner.sync_time_entries(a, w, entries);
+        (self.hook)(self.uploads.fetch_add(1, Ordering::SeqCst));
+        result
+    }
+    fn delete_time_entries(&self, a: &str, ids: &[String]) -> Result<(), RemoteError> {
+        self.inner.delete_time_entries(a, ids)
+    }
+}
+
+/// A core for `w`'s account and ledger over `api`.
+fn core_over(w: &World, api: Arc<dyn RemoteApi>, batch_size: usize) -> SyncCore {
+    let ledger: Arc<dyn SyncLedger> = w.ledger.clone();
+    SyncCore::new(
+        ledger,
+        Arc::clone(&w.account),
+        Some(api),
+        settings(batch_size),
+        w.clock.boxed(),
+        Box::new(|| 0.5),
+    )
+}
+
+fn remote_deletes(w: &World) -> Vec<Vec<String>> {
+    w.remote
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            Call::DeleteEntries { ids } => Some(ids),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_selection_change_mid_pass_never_uploads_to_the_old_workspace() {
+    for next in [Some(WS_B.to_owned()), None] {
+        let w = World::signed_in_with_workspace();
+        w.remote
+            .add_membership(&w.user_id, WS_B, "Studio B", WorkspaceRole::Member);
+        let ids = w.ledger.record(10);
+        let ledger = Arc::clone(&w.ledger);
+        let selection = next.clone();
+        // As select_sync_workspace or sign-out would, while the first batch is in flight.
+        let api = AfterUpload::new(&w.remote, move |n| {
+            if n == 0 {
+                ledger.state().sync_workspace = selection.clone();
+            }
+        });
+        let mut core = core_over(&w, api, 2);
+
+        // One batch reached the old workspace before the change; the pass then stops.
+        assert_eq!(core.run_once(), PassOutcome::RetryAfter(500), "{next:?}");
+        assert_eq!(w.remote.sync_batches().len(), 1, "{next:?}");
+        let in_old: Vec<String> = w
+            .remote
+            .state()
+            .entries
+            .values()
+            .filter(|e| e.workspace_id == WS_A)
+            .map(|e| e.entry.id.clone())
+            .collect();
+        assert_eq!(in_old.len(), 2, "{next:?}");
+        assert_eq!(w.ledger.ids_with(RowStatus::Pending).len(), 8, "{next:?}");
+
+        // The next pass follows the new selection.
+        match &next {
+            Some(ws_b) => {
+                assert_eq!(core.run_once(), PassOutcome::Idle);
+                let in_new = w
+                    .remote
+                    .state()
+                    .entries
+                    .values()
+                    .filter(|e| &e.workspace_id == ws_b)
+                    .count();
+                assert_eq!(in_new, 8);
+                assert_eq!(w.remote.entry_ids(), set(&ids));
+            }
+            None => {
+                assert_eq!(core.run_once(), PassOutcome::Blocked);
+                assert_eq!(core.overview().phase, SyncPhase::NeedsWorkspace);
+                assert_eq!(w.ledger.ids_with(RowStatus::Pending).len(), 8);
+            }
+        }
+    }
+}
+
+#[test]
+fn history_deleted_during_its_upload_is_removed_from_the_server_too() {
+    let w = World::signed_in_with_workspace();
+    let ids = w.ledger.record(3);
+    let ledger = Arc::clone(&w.ledger);
+    let deleted = ids[0].clone();
+    // "Delete history" runs on the tracker thread while the batch is in flight.
+    let api = AfterUpload::new(&w.remote, move |_| {
+        ledger.state().rows.retain(|row| row.entry.id != deleted);
+    });
+    let mut core = core_over(&w, api, 100);
+
+    assert_eq!(core.run_once(), PassOutcome::Idle);
+
+    assert_eq!(w.remote.entry_ids(), set(&ids[1..]));
+    assert_eq!(remote_deletes(&w), vec![vec![ids[0].clone()]]);
+    assert_eq!(w.ledger.status_of(&ids[1]), RowStatus::Synced);
+    assert_eq!(w.ledger.status_of(&ids[2]), RowStatus::Synced);
+}
+
+#[test]
+fn a_failed_cleanup_after_a_deletion_is_logged_and_syncing_goes_on() {
+    let w = World::signed_in_with_workspace();
+    let ids = w.ledger.record(2);
+    w.remote
+        .state()
+        .delete_failures
+        .push_back(RemoteError::Network("could not connect".into()));
+    let ledger = Arc::clone(&w.ledger);
+    let deleted = ids[0].clone();
+    let api = AfterUpload::new(&w.remote, move |_| {
+        ledger.state().rows.retain(|row| row.entry.id != deleted);
+    });
+    let mut core = core_over(&w, api, 100);
+
+    assert_eq!(core.run_once(), PassOutcome::Idle);
+    assert_eq!(w.ledger.status_of(&ids[1]), RowStatus::Synced);
+    assert_eq!(core.overview().phase, SyncPhase::Idle);
+    assert_eq!(remote_deletes(&w).len(), 1, "one best-effort attempt");
+}
+
+#[test]
+fn nothing_is_deleted_remotely_when_every_uploaded_row_is_still_here() {
+    let w = World::signed_in_with_workspace();
+    let ids = w.ledger.record(3);
+    let mut core = w.core(settings(2));
+    assert_eq!(core.run_once(), PassOutcome::Idle);
+    assert_eq!(w.remote.entry_ids(), set(&ids));
+    assert!(remote_deletes(&w).is_empty());
 }
 
 #[test]
@@ -621,6 +818,36 @@ fn signed_in_without_a_workspace_needs_one() {
     assert_eq!(overview.phase, SyncPhase::NeedsWorkspace);
     assert_eq!(overview.pending_count, 2);
     assert!(w.remote.sync_calls().is_empty());
+}
+
+#[test]
+fn a_pass_after_an_offline_restore_loads_the_memberships() {
+    let w = World::signed_in_with_workspace();
+    // The next launch starts offline.
+    w.remote
+        .state()
+        .refresh_failures
+        .push_back(RemoteError::Network("could not connect".into()));
+    let account = w.restart();
+    account.restore();
+    assert!(account.status().workspaces.is_empty());
+    let ids = w.ledger.record(2);
+    let api: Arc<dyn RemoteApi> = w.remote.clone();
+    let ledger: Arc<dyn SyncLedger> = w.ledger.clone();
+    let mut core = SyncCore::new(
+        ledger,
+        Arc::clone(&account),
+        Some(api),
+        settings(10),
+        w.clock.boxed(),
+        Box::new(|| 0.5),
+    );
+
+    // Back online: one pass loads the memberships and uploads.
+    assert_eq!(core.run_once(), PassOutcome::Idle);
+    assert_eq!(account.status().workspaces.len(), 1);
+    assert_eq!(core.overview().workspace_name.as_deref(), Some("Studio A"));
+    assert_eq!(w.remote.entry_ids(), set(&ids));
 }
 
 // ---- backoff --------------------------------------------------------------------------------

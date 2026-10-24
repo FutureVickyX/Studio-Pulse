@@ -240,6 +240,9 @@ impl SyncCore {
                 };
             }
         };
+        // Memberships still unknown (restored offline): load them before reading the selection,
+        // which a fresh list may clear.
+        self.account.ensure_workspaces_loaded();
         let workspace_id = match self.ledger.sync_workspace() {
             Ok(Some(workspace_id)) => workspace_id,
             Ok(None) => return self.block(SyncPhase::NeedsWorkspace, None),
@@ -353,9 +356,11 @@ impl SyncCore {
         if ctx.user_id != user_id {
             return Err(self.account_moved());
         }
+        self.still_selected(workspace_id)?;
         self.enter_syncing();
         self.last_attempt_at_ms = Some((self.clock)());
-        let mut result = api.sync_time_entries(&ctx.access_token, workspace_id, &payload);
+        let mut access_token = ctx.access_token;
+        let mut result = api.sync_time_entries(&access_token, workspace_id, &payload);
         if matches!(result, Err(RemoteError::Unauthorized)) {
             // The access token was refused: refresh once, retry once.
             let ctx = match self.account.handle_unauthorized() {
@@ -365,11 +370,15 @@ impl SyncCore {
             if ctx.user_id != user_id {
                 return Err(self.account_moved());
             }
+            self.still_selected(workspace_id)?;
             self.last_attempt_at_ms = Some((self.clock)());
-            result = api.sync_time_entries(&ctx.access_token, workspace_id, &payload);
+            access_token = ctx.access_token;
+            result = api.sync_time_entries(&access_token, workspace_id, &payload);
         }
         match result {
-            Ok(results) => self.apply_results(workspace_id, &ids, results, settled),
+            Ok(results) => {
+                self.apply_results(api, &access_token, workspace_id, &ids, results, settled)
+            }
             Err(RemoteError::Unauthorized) => {
                 // Even a freshly renewed token was refused (e.g. a skewed clock): try later.
                 self.note_attempt_failure(&ids, "Supabase refused the session");
@@ -391,6 +400,8 @@ impl SyncCore {
     /// Mark exactly the entries the server confirmed; anything it did not mention stays pending.
     fn apply_results(
         &mut self,
+        api: &dyn RemoteApi,
+        access_token: &str,
         workspace_id: &str,
         ids: &[String],
         results: Vec<EntryResult>,
@@ -428,6 +439,7 @@ impl SyncCore {
                 // The server has them; the next attempt is answered "already present".
                 return Err(self.local_failure(&err));
             }
+            self.remove_deleted_during_upload(api, access_token, &synced);
         }
         if !rejected.is_empty() {
             log::warn!(
@@ -560,6 +572,56 @@ impl SyncCore {
     }
 
     /// Someone else signed in while the pass ran: stop; the account change starts a new pass.
+    /// Intervals the user deleted on this device while their upload was in flight reached the
+    /// server anyway. Delete them there too, so deleting history means what it says. Best effort:
+    /// a failure is logged, and the rows stay the user's own to delete.
+    fn remove_deleted_during_upload(
+        &self,
+        api: &dyn RemoteApi,
+        access_token: &str,
+        synced: &[String],
+    ) {
+        let present: HashSet<String> = match self.ledger.existing_ids(synced) {
+            Ok(present) => present.iter().map(|id| id_key(id)).collect(),
+            Err(err) => {
+                log::warn!(
+                    "sync: could not check for intervals deleted during their upload: {err}"
+                );
+                return;
+            }
+        };
+        let gone: Vec<String> = synced
+            .iter()
+            .filter(|id| !present.contains(&id_key(id)))
+            .cloned()
+            .collect();
+        if gone.is_empty() {
+            return;
+        }
+        match api.delete_time_entries(access_token, &gone) {
+            Ok(()) => log::info!(
+                "sync: removed {} interval(s) from Supabase that were deleted on this device                  during their upload",
+                gone.len()
+            ),
+            Err(err) => log::warn!(
+                "sync: {} interval(s) deleted on this device during their upload are still on                  Supabase: {err}",
+                gone.len()
+            ),
+        }
+    }
+
+    /// The sync workspace can change while a pass runs: another one chosen, or cleared by
+    /// `select_sync_workspace(None)` or sign-out. Server rows can't be moved afterwards, so every
+    /// request goes to the workspace selected right now, never to one the user just left;
+    /// otherwise the pass ends and the next one uses the new selection.
+    fn still_selected(&mut self, workspace_id: &str) -> BatchResult {
+        match self.ledger.sync_workspace() {
+            Ok(Some(current)) if current.eq_ignore_ascii_case(workspace_id) => Ok(()),
+            Ok(_) => Err(self.account_moved()),
+            Err(err) => Err(self.local_failure(&err)),
+        }
+    }
+
     fn account_moved(&mut self) -> PassOutcome {
         self.phase = SyncPhase::Idle;
         self.next_attempt_at_ms = None;

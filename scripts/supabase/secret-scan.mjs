@@ -7,10 +7,10 @@
 //   options: --env-path <path>  (default supabase/.env.local)   --no-allowlist   --help
 //
 // Default targets: apps/desktop/dist (the webview bundle), the release executable and the NSIS
-// installer(s) under $CARGO_TARGET_DIR/release (default %LOCALAPPDATA%/studio-pulse-build/target,
-// the location docs/installation.md sets up), and apps/desktop/src-tauri/src. Missing default
-// targets are reported and skipped (e.g. no release build yet); a missing explicit path is an
-// error.
+// installer(s) under Cargo's target directory ($CARGO_TARGET_DIR, else Cargo's own default
+// apps/desktop/src-tauri/target), and apps/desktop/src-tauri/src. This is a release gate: a
+// missing webview bundle or release executable is an error (exit 2), never a silent pass. Only a
+// missing installer is reported and skipped. A missing explicit path is an error.
 //
 // Exit 0: nothing found. Exit 1: findings (file + kind + line/offset; the matched text is NEVER
 // printed). Exit 2: usage error or nothing could be scanned.
@@ -264,26 +264,26 @@ export function listFiles(path) {
  * @returns {{ path: string, label: string }[]}
  */
 export function defaultTargets(env = process.env) {
+  // Where Cargo writes: $CARGO_TARGET_DIR, else its default next to the crate (the repository has
+  // no .cargo/config that would move it).
   const targetDir = env.CARGO_TARGET_DIR
     ? resolve(env.CARGO_TARGET_DIR)
-    : env.LOCALAPPDATA
-      ? join(env.LOCALAPPDATA, 'studio-pulse-build', 'target')
-      : join(REPO_ROOT, 'apps', 'desktop', 'src-tauri', 'target');
+    : join(REPO_ROOT, 'apps', 'desktop', 'src-tauri', 'target');
   const release = join(targetDir, 'release');
-  /** @type {{ path: string, label: string }[]} */
+  /** @type {{ path: string, label: string, required: boolean }[]} */
   const targets = [
-    { path: join(REPO_ROOT, 'apps', 'desktop', 'dist'), label: 'webview bundle' },
-    { path: join(release, 'studio-pulse.exe'), label: 'release executable' },
+    { path: join(REPO_ROOT, 'apps', 'desktop', 'dist'), label: 'webview bundle', required: true },
+    { path: join(release, 'studio-pulse.exe'), label: 'release executable', required: true },
   ];
   const nsis = join(release, 'bundle', 'nsis');
   try {
     for (const name of readdirSync(nsis).sort()) {
-      if (name.toLowerCase().endsWith('.exe')) targets.push({ path: join(nsis, name), label: 'NSIS installer' });
+      if (name.toLowerCase().endsWith('.exe')) targets.push({ path: join(nsis, name), label: 'NSIS installer', required: false });
     }
   } catch {
-    targets.push({ path: join(nsis, '*-setup.exe'), label: 'NSIS installer' });
+    targets.push({ path: join(nsis, '*-setup.exe'), label: 'NSIS installer', required: false });
   }
-  targets.push({ path: join(REPO_ROOT, 'apps', 'desktop', 'src-tauri', 'src'), label: 'desktop Rust sources' });
+  targets.push({ path: join(REPO_ROOT, 'apps', 'desktop', 'src-tauri', 'src'), label: 'desktop Rust sources', required: true });
   return targets;
 }
 
@@ -400,6 +400,13 @@ export function main(argv, { out = (l) => console.log(l), err = (l) => console.e
         found = listFiles(target.path);
       } catch {
         found = null;
+      }
+      if (found === null && target.required) {
+        err(
+          `Missing ${target.label}: ${display(target.path)}. Run the release build first (npm run build), set ` +
+            `CARGO_TARGET_DIR if Cargo builds elsewhere, or pass the paths to scan.`,
+        );
+        return 2;
       }
       if (found === null) out(`skip  ${target.label}: ${display(target.path)} not found`);
       else {

@@ -140,6 +140,8 @@ const BOOTSTRAP: readonly string[] = [
   // public schema, as Supabase configures it.
   `grant usage on schema public to anon, authenticated, service_role`,
   `grant usage, create on schema public to ${MIGRATION_OWNER}`,
+  // Supabase's `postgres` role may create schemas (migration 5/5 creates `private`).
+  `do $$ begin execute format('grant create on database %I to ${MIGRATION_OWNER}', current_database()); end $$`,
   `alter default privileges for role ${MIGRATION_OWNER} in schema public
      grant all on tables to anon, authenticated, service_role`,
   `alter default privileges for role ${MIGRATION_OWNER} in schema public

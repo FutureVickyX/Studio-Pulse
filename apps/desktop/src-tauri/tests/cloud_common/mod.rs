@@ -101,6 +101,8 @@ pub struct FakeLedger {
     pub fail_mark_synced: AtomicBool,
     /// `mark_synced` claims success but changes nothing while set (a write that did not stick).
     pub ignore_mark_synced: AtomicBool,
+    /// `set_account_user` fails while set (the local database refuses the write).
+    pub fail_set_account_user: AtomicBool,
 }
 
 impl FakeLedger {
@@ -205,6 +207,9 @@ pub fn sample_entry(minute: i64) -> PendingEntry {
 
 impl SyncLedger for FakeLedger {
     fn set_account_user(&self, user_id: Option<&str>) -> Result<(), LedgerError> {
+        if self.fail_set_account_user.load(Ordering::SeqCst) {
+            return Err(LedgerError("database is locked".into()));
+        }
         self.state().account_user = user_id.map(str::to_owned);
         Ok(())
     }
@@ -318,6 +323,15 @@ impl SyncLedger for FakeLedger {
         Ok(updated)
     }
 
+    fn existing_ids(&self, ids: &[String]) -> Result<Vec<String>, LedgerError> {
+        let state = self.state();
+        Ok(ids
+            .iter()
+            .filter(|id| state.rows.iter().any(|row| &row.entry.id == *id))
+            .cloned()
+            .collect())
+    }
+
     fn record_attempt_failure(&self, ids: &[String], error: &str) -> Result<(), LedgerError> {
         let mut state = self.state();
         for row in state.rows.iter_mut() {
@@ -382,6 +396,9 @@ pub enum Call {
         ids: Vec<String>,
         thread: Option<String>,
     },
+    DeleteEntries {
+        ids: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -432,6 +449,8 @@ pub struct RemoteState {
     pub sign_in_failures: VecDeque<RemoteError>,
     /// Returned (in order) by `my_workspaces` before doing anything.
     pub workspaces_failures: VecDeque<RemoteError>,
+    /// Returned (in order) by `delete_time_entries` before doing anything.
+    pub delete_failures: VecDeque<RemoteError>,
     /// Sign-up answers without a session (email confirmation on).
     pub require_confirmation: bool,
 
@@ -837,6 +856,24 @@ impl RemoteApi for FakeRemote {
             ));
         }
         Ok(results)
+    }
+
+    fn delete_time_entries(&self, access_token: &str, ids: &[String]) -> Result<(), RemoteError> {
+        let now = self.clock.now();
+        let mut state = self.state();
+        state.calls.push(Call::DeleteEntries { ids: ids.to_vec() });
+        if let Some(err) = state.delete_failures.pop_front() {
+            return Err(err);
+        }
+        let user = Self::user_for_access(&state, access_token, now)?;
+        for id in ids {
+            let id = id.to_ascii_lowercase();
+            // RLS: only the caller's own rows; others are silently not matched.
+            if state.entries.get(&id).is_some_and(|e| e.user_id == user) {
+                state.entries.remove(&id);
+            }
+        }
+        Ok(())
     }
 }
 

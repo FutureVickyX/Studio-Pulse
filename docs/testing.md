@@ -25,10 +25,19 @@ npm run test:rust        # cargo test: engine, registry, store, startup, service
 | Cross-package report reconciliation | `tests/integration` | No |
 | Desktop UI pure logic: keyboard shortcuts, routes, status text, chart scales | `tests/unit/desktop` | No |
 
-Phase-2 topics from the requirements (offline sync queue retries, permission checks, note
-autosave, concurrent note updates, workspace isolation, RLS) have no code to test yet. They are
-tracked for Phase 2. Phase 1 does test the local half of the offline queue: closed intervals stay
-`pending` in the outbox.
+Phase 2A (Supabase accounts, workspaces, RLS and sync):
+
+| What | Where | Needs network |
+| --- | --- | --- |
+| RLS and RPCs on a Supabase-shaped Postgres (PGlite): isolation, roles and no self-escalation, invitations, private notes and time entries, removed members, idempotent `sync_time_entries`, exact grants, policies evaluating `auth.uid()` once, foreign-key indexes | `tests/integration/supabase` | No |
+| Typed client and schema cross-check against the migrations, migration runner, verification payloads, secret scanner | `tests/unit/database` | No |
+| Account manager: sign-in/up/out, restore online and offline, rotating refresh tokens, memberships reloaded after an offline start, sign-out that fails safely | `apps/desktop/src-tauri/tests/cloud_account.rs` | No |
+| Sync engine: batches, per-entry results, lost responses, backoff with jitter, no overlapping passes, claim before upload | `apps/desktop/src-tauri/tests/cloud_sync.rs` | No |
+| Local outbox and the in-place v1 → v2 upgrade | `apps/desktop/src-tauri/tests/store_sync_ledger.rs` | No |
+| HTTP client against a local fake server | `apps/desktop/src-tauri/tests/cloud_http.rs` | No |
+| The real project: every RLS/RPC check as real users (`verify.mjs`), the HTTP contract and the full desktop pipeline (`supabase_live`, ignored by default) | `scripts/supabase/verify.mjs`, `apps/desktop/src-tauri/tests/supabase_live.rs` | **Yes** (see [docs/supabase.md §3](supabase.md#3-verify-against-the-real-project)) |
+
+Note autosave and concurrent note editing arrive with the Phase 2B UI.
 
 ## 2. Live Windows tests (real desktop session)
 

@@ -3,15 +3,18 @@
 
 mod cloud_common;
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 
 use cloud_common::*;
 use studio_pulse_lib::cloud::account::{
     AccountError, AccountManager, AccountState, AccountStatus, REFRESH_MARGIN_MS,
 };
-use studio_pulse_lib::cloud::api::{RemoteError, WorkspaceRole};
+use studio_pulse_lib::cloud::api::{RemoteApi, RemoteError, WorkspaceRole};
 use studio_pulse_lib::cloud::config::ConfigError;
-use studio_pulse_lib::cloud::credentials::{CredentialStore, MemoryCredentialStore, StoredSession};
+use studio_pulse_lib::cloud::credentials::{
+    CredentialError, CredentialStore, MemoryCredentialStore, StoredSession,
+};
 use studio_pulse_lib::cloud::ledger::SyncLedger;
 
 const INVITE_TOKEN: &str = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9";
@@ -154,6 +157,91 @@ fn restore_offline_stays_signed_in_and_access_retries_later() {
     assert_eq!(ctx.user_id, w.user_id);
     assert_ne!(w.stored().unwrap().refresh_token, original);
     assert_eq!(w.remote.refresh_calls(), 2);
+}
+
+fn workspace_fetches(world: &World) -> usize {
+    world
+        .remote
+        .calls()
+        .iter()
+        .filter(|c| **c == Call::MyWorkspaces)
+        .count()
+}
+
+#[test]
+fn memberships_unknown_after_an_offline_restore_are_loaded_once_back_online() {
+    let w = World::new();
+    store_session(&w);
+    w.remote
+        .add_membership(&w.user_id, WS_A, "Studio A", WorkspaceRole::Owner);
+    w.ledger.set_sync_workspace(Some(WS_A)).unwrap();
+    w.remote
+        .state()
+        .refresh_failures
+        .push_back(RemoteError::Network("could not connect".into()));
+    w.account.restore();
+    assert!(w.account.status().workspaces.is_empty());
+
+    // Still offline: nothing changes, and the next attempt tries again.
+    w.remote
+        .state()
+        .refresh_failures
+        .push_back(RemoteError::Network("could not connect".into()));
+    w.account.ensure_workspaces_loaded();
+    assert!(w.account.status().workspaces.is_empty());
+
+    // Back online: the memberships load and the selection is kept.
+    let seen = observe(&w.account);
+    w.account.ensure_workspaces_loaded();
+    let status = w.account.status();
+    assert_eq!(status.workspaces.len(), 1);
+    assert_eq!(status.workspaces[0].name, "Studio A");
+    assert_eq!(status.sync_workspace_id.as_deref(), Some(WS_A));
+    assert_eq!(
+        seen.lock().unwrap().last().map(|s| s.workspaces.len()),
+        Some(1),
+        "the UI is told"
+    );
+
+    // Loaded: further calls fetch nothing.
+    let fetches = workspace_fetches(&w);
+    w.account.ensure_workspaces_loaded();
+    w.account.ensure_workspaces_loaded();
+    assert_eq!(workspace_fetches(&w), fetches);
+}
+
+#[test]
+fn memberships_that_failed_to_load_at_restore_are_retried() {
+    let w = World::new();
+    store_session(&w);
+    w.remote
+        .add_membership(&w.user_id, WS_A, "Studio A", WorkspaceRole::Owner);
+    w.remote
+        .state()
+        .workspaces_failures
+        .push_back(RemoteError::Server(503));
+    w.account.restore();
+    assert!(w.account.status().workspaces.is_empty());
+
+    w.account.ensure_workspaces_loaded();
+    assert_eq!(w.account.status().workspaces.len(), 1);
+}
+
+#[test]
+fn ensure_workspaces_loaded_does_nothing_when_signed_out_or_already_loaded() {
+    let w = World::new();
+    w.account.restore();
+    w.account.ensure_workspaces_loaded();
+    assert_eq!(workspace_fetches(&w), 0, "signed out");
+
+    w.account.sign_in(EMAIL, PASSWORD).unwrap();
+    let after_sign_in = workspace_fetches(&w);
+    w.account.ensure_workspaces_loaded();
+    assert_eq!(
+        workspace_fetches(&w),
+        after_sign_in,
+        "sign-in already loaded them (an empty list counts)"
+    );
 }
 
 #[test]
@@ -460,6 +548,114 @@ fn sign_out_keeps_local_data_and_clears_the_account() {
     assert!(!w.remote.valid_refresh_tokens().contains(&refresh));
     assert_eq!(states(&seen), [AccountState::SignedOut]);
     assert_eq!(w.account.access().unwrap_err(), AccountError::NotSignedIn);
+}
+
+/// A Credential Manager stand-in whose `clear` can be made to fail.
+#[derive(Default)]
+struct StuckCredentials {
+    inner: MemoryCredentialStore,
+    fail_clear: AtomicBool,
+    failed_clears: AtomicUsize,
+}
+
+impl CredentialStore for StuckCredentials {
+    fn load(&self) -> Result<Option<StoredSession>, CredentialError> {
+        self.inner.load()
+    }
+    fn save(&self, session: &StoredSession) -> Result<(), CredentialError> {
+        self.inner.save(session)
+    }
+    fn clear(&self) -> Result<(), CredentialError> {
+        if self.fail_clear.load(Ordering::SeqCst) {
+            self.failed_clears.fetch_add(1, Ordering::SeqCst);
+            return Err(CredentialError(
+                "could not remove the saved sign-in (0x80070005)".into(),
+            ));
+        }
+        self.inner.clear()
+    }
+}
+
+#[test]
+fn sign_out_that_cannot_remove_the_saved_sign_in_stays_signed_in_and_says_so() {
+    let w = World::new();
+    w.remote
+        .add_membership(&w.user_id, WS_A, "Studio A", WorkspaceRole::Owner);
+    let credentials = Arc::new(StuckCredentials::default());
+    let api: Arc<dyn RemoteApi> = w.remote.clone();
+    let ledger: Arc<dyn SyncLedger> = w.ledger.clone();
+    let account = AccountManager::new(
+        Ok(test_config()),
+        Some(api),
+        credentials.clone(),
+        ledger,
+        w.clock.boxed_sync(),
+    );
+    account.sign_in(EMAIL, PASSWORD).unwrap();
+    credentials.fail_clear.store(true, Ordering::SeqCst);
+
+    let err = account.sign_out().unwrap_err();
+
+    assert!(
+        matches!(&err, AccountError::Local(message) if message.contains("still signed in")),
+        "{err}"
+    );
+    assert_eq!(
+        credentials.failed_clears.load(Ordering::SeqCst),
+        2,
+        "tried twice"
+    );
+    assert_eq!(account.status().state, AccountState::SignedIn);
+    assert!(credentials.load().unwrap().is_some());
+    assert_eq!(
+        w.ledger.account_user().unwrap().as_deref(),
+        Some(w.user_id.as_str())
+    );
+    assert_eq!(w.ledger.sync_workspace().unwrap().as_deref(), Some(WS_A));
+    assert!(
+        !w.remote
+            .calls()
+            .iter()
+            .any(|c| matches!(c, Call::SignOut { .. })),
+        "the server session is kept as well"
+    );
+
+    // Once Windows cooperates, signing out works.
+    credentials.fail_clear.store(false, Ordering::SeqCst);
+    assert_eq!(account.sign_out().unwrap().state, AccountState::SignedOut);
+    assert!(credentials.load().unwrap().is_none());
+    assert_eq!(w.ledger.account_user().unwrap(), None);
+}
+
+#[test]
+fn sign_out_that_cannot_clear_the_stamp_never_looks_signed_out() {
+    let w = World::signed_in_with_workspace();
+    let seen = observe(&w.account);
+    w.ledger.fail_set_account_user.store(true, Ordering::SeqCst);
+
+    assert!(matches!(
+        w.account.sign_out().unwrap_err(),
+        AccountError::Local(_)
+    ));
+
+    assert_eq!(w.account.status().state, AccountState::SignedIn);
+    assert_eq!(
+        w.ledger.account_user().unwrap().as_deref(),
+        Some(w.user_id.as_str())
+    );
+    assert!(
+        states(&seen).iter().all(|s| *s == AccountState::SignedIn),
+        "never published as signed out"
+    );
+
+    // The saved sign-in is gone, so the next launch starts signed out and drops the stamp.
+    w.ledger
+        .fail_set_account_user
+        .store(false, Ordering::SeqCst);
+    let restarted = w.restart();
+    restarted.restore();
+    assert_eq!(restarted.status().state, AccountState::SignedOut);
+    assert_eq!(w.ledger.account_user().unwrap(), None);
 }
 
 #[test]

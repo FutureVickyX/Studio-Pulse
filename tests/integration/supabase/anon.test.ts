@@ -62,14 +62,15 @@ const RPC_CALLS: ReadonlyArray<[string, string, (world: World) => unknown[]]> = 
     `select * from public.sync_time_entries($1, $2::jsonb)`,
     (w) => [w.wsA, JSON.stringify([entry()])],
   ],
-  ['is_workspace_member', `select public.is_workspace_member($1)`, (w) => [w.wsA]],
+  // The RLS helpers live in `private` (migration 5/5); anon has no USAGE on that schema.
+  ['is_workspace_member', `select private.is_workspace_member($1)`, (w) => [w.wsA]],
   [
     'has_workspace_role',
-    `select public.has_workspace_role($1, array['owner']::public.workspace_role[])`,
+    `select private.has_workspace_role($1, array['owner']::public.workspace_role[])`,
     (w) => [w.wsA],
   ],
-  ['is_active_member', `select public.is_active_member($1, $2)`, (w) => [w.wsA, w.alice.id]],
-  ['shares_workspace_with', `select public.shares_workspace_with($1)`, (w) => [w.alice.id]],
+  ['is_active_member', `select private.is_active_member($1, $2)`, (w) => [w.wsA, w.alice.id]],
+  ['shares_workspace_with', `select private.shares_workspace_with($1)`, (w) => [w.alice.id]],
 ];
 
 let world: World;

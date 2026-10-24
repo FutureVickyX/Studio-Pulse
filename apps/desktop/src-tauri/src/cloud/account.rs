@@ -126,6 +126,9 @@ struct Inner {
     expires_at_ms: EpochMs,
     /// Memberships as last fetched (meaningful only while signed in).
     workspaces: Vec<WorkspaceSummary>,
+    /// `workspaces` was fetched for the current session (false after an offline restore, or
+    /// when the fetch failed), so [`AccountManager::ensure_workspaces_loaded`] has work to do.
+    workspaces_loaded: bool,
     /// Bumped whenever the identity changes (sign-in, sign-out, expiry): network results that
     /// started under an older generation are discarded.
     generation: u64,
@@ -143,6 +146,7 @@ impl Inner {
             access_token: None,
             expires_at_ms: 0,
             workspaces: Vec::new(),
+            workspaces_loaded: false,
             generation: 0,
             token_epoch: 0,
         }
@@ -154,6 +158,7 @@ impl Inner {
         self.access_token = None;
         self.expires_at_ms = 0;
         self.workspaces.clear();
+        self.workspaces_loaded = false;
         self.generation += 1;
         self.token_epoch += 1;
     }
@@ -415,40 +420,44 @@ impl AccountManager {
         }
     }
 
-    /// Best-effort server sign-out, then clear the stored session and the account stamp. Local
+    /// Clear the stored session and the account stamp, then a best-effort server sign-out. Local
     /// intervals (including this user's pending ones) are kept.
+    ///
+    /// The local part comes first, so the app is signed out immediately whatever the network
+    /// does. If any of it fails, the account stays signed in and the error is returned: looking
+    /// signed out while the saved sign-in or the stamp survived would let the next launch sign
+    /// this account back in, or give it intervals recorded "while signed out".
     pub fn sign_out(&self) -> Result<AccountStatus, AccountError> {
         let Ok(api) = self.api() else {
             return Ok(self.status());
         };
-        // Local state first, so the app is signed out immediately whatever the network does.
-        let (revoke, problems) = {
+        let cleared = {
             let mut inner = lock(&self.inner);
-            let revoke = if inner.state == AccountState::SignedIn {
-                match inner.usable_access((self.clock)(), SIGN_OUT_MARGIN_MS) {
-                    Some(ctx) => Some(Revoke::Access(ctx.access_token)),
-                    None => inner.refresh_token.clone().map(Revoke::Refresh),
+            match self.clear_local_session() {
+                Ok(()) => {
+                    let revoke = if inner.state == AccountState::SignedIn {
+                        match inner.usable_access((self.clock)(), SIGN_OUT_MARGIN_MS) {
+                            Some(ctx) => Some(Revoke::Access(ctx.access_token)),
+                            None => inner.refresh_token.clone().map(Revoke::Refresh),
+                        }
+                    } else {
+                        None
+                    };
+                    inner.drop_session();
+                    inner.user = None;
+                    inner.state = AccountState::SignedOut;
+                    Ok(revoke)
                 }
-            } else {
-                None
-            };
-            inner.drop_session();
-            inner.user = None;
-            inner.state = AccountState::SignedOut;
-            let mut problems = Vec::new();
-            if let Err(err) = self.credentials.clear() {
-                problems.push(err.to_string());
+                Err(problem) => Err(problem),
             }
-            // The next account chooses its own workspace; new intervals stay unowned until then.
-            if let Err(err) = self.ledger.set_account_user(None) {
-                problems.push(err.to_string());
-            }
-            if let Err(err) = self.ledger.set_sync_workspace(None) {
-                problems.push(err.to_string());
-            }
-            (revoke, problems)
         };
+        // Also after a failure: the sync workspace may already be cleared.
         self.notify();
+        let revoke = cleared.map_err(|problem| {
+            AccountError::Local(format!(
+                "Couldn't finish signing out ({problem}). You're still signed in; try again."
+            ))
+        })?;
         // Best effort: revoke this device's session server-side. Without a usable access token
         // (offline since launch, or expired) one refresh obtains it; the rotated token it returns
         // is revoked by the same logout and never stored.
@@ -470,10 +479,40 @@ impl AccountManager {
                 );
             }
         }
-        if !problems.is_empty() {
-            return Err(AccountError::Local(problems.join("; ")));
-        }
         Ok(self.status())
+    }
+
+    /// The local half of signing out, in an order where a failure part-way leaves a consistent,
+    /// still-signed-in state: the saved sign-in, then the sync workspace (the next account
+    /// chooses its own), then the stamp (new intervals stay unowned until claimed). Called with
+    /// the `inner` lock held.
+    fn clear_local_session(&self) -> Result<(), String> {
+        self.credentials
+            .clear()
+            .or_else(|_| self.credentials.clear())
+            .map_err(|err| err.to_string())?;
+        self.ledger
+            .set_sync_workspace(None)
+            .map_err(|err| err.to_string())?;
+        self.ledger
+            .set_account_user(None)
+            .map_err(|err| err.to_string())
+    }
+
+    /// Load the memberships if this session has none yet: the restore ran offline, or the fetch
+    /// failed. Without this they would stay unknown until the user pressed Refresh. Best effort,
+    /// and a no-op once loaded; the sync thread calls it on every pass while signed in, so it is
+    /// retried with the pass's backoff.
+    pub fn ensure_workspaces_loaded(&self) {
+        {
+            let inner = lock(&self.inner);
+            if inner.state != AccountState::SignedIn || inner.workspaces_loaded {
+                return;
+            }
+        }
+        if let Err(err) = self.refresh_workspaces() {
+            log::info!("workspaces not loaded yet: {err}");
+        }
     }
 
     pub fn refresh_workspaces(&self) -> Result<AccountStatus, AccountError> {
@@ -806,6 +845,7 @@ impl AccountManager {
             }
         }
         inner.workspaces = workspaces;
+        inner.workspaces_loaded = true;
         Ok(())
     }
 

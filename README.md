@@ -73,6 +73,11 @@ Verified end-to-end with the real app on this machine:
 - The webviews were refused tray, menu, image and event-emit APIs, and the indicator was refused
   settings changes.
 
+Phase 2A was verified against a real Supabase project (`studio-pulse-dev`): all seven migrations
+applied, all 35 RLS/RPC checks passing as real users through the publishable key, and both Rust
+live tests (the HTTP contract and the full desktop sync pipeline) passing. See
+[docs/supabase.md §3](docs/supabase.md#3-verify-against-the-real-project).
+
 Still to do on a real install (see [docs/testing.md](docs/testing.md#3-manual-windows-verification-checklist)):
 run the installer, sign out/in or reboot with launch at login enabled, and check Blender detection.
 

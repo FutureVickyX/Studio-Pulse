@@ -8,6 +8,8 @@
 // The secret key is used locally, and only to create and delete throwaway confirmed users (and to
 // delete their workspaces during cleanup). Every check acts exclusively through the publishable
 // key, as anonymous or as one of those users with their own session, exactly like a client.
+// `runChecks` is also exported, so the same checks can run against users an operator provisioned
+// another way (for example with SQL); the caller then owns user creation and cleanup.
 //
 // Output: one PASS/FAIL line per check, then a summary. Exit code 0 only when every check passed
 // and cleanup succeeded. Keys, passwords, access/refresh tokens and invitation tokens are never
@@ -15,8 +17,9 @@
 // scripts/supabase/README.md.
 
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { relative } from 'node:path';
+import { relative, resolve } from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -69,7 +72,9 @@ const MINUTE = 60_000;
 
 /** Every value that must never be printed; the recorder redacts all of them. */
 const secrets = new Set();
-const secretList = () => [...secrets];
+export const secretList = () => [...secrets];
+/** Register a value (e.g. a provisioned user's password) for redaction. @param {string} value */
+export const registerSecret = (value) => void secrets.add(value);
 
 /** @param {string} line */
 const say = (line) => console.log(redactText(line));
@@ -237,20 +242,25 @@ function expectResults(data, entries, status, detail) {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * @param {CheckRecorder} rec
- * @param {{ url: string, publishableKey: string, admin: Client, runId: string, state: CleanupState }} ctx
+ * Creates (or looks up) one confirmed throwaway user. `main` uses the secret key; another caller
+ * may hand over users it provisioned itself. Passwords must be registered with `registerSecret`.
+ * @typedef {(email: string, displayName: string) => Promise<TestUser>} Provision
  */
-async function runChecks(rec, { url, publishableKey, admin, runId, state }) {
-  // -- Setup (secret key, local only) ----------------------------------------------------------
+
+/**
+ * @param {CheckRecorder} rec
+ * @param {{ url: string, publishableKey: string, provision: Provision, runId: string, state: CleanupState }} ctx
+ */
+export async function runChecks(rec, { url, publishableKey, provision, runId, state }) {
+  // -- Setup -----------------------------------------------------------------------------------
   const users = await rec.check(
-    'setup: create three confirmed throwaway users (secret key, local only)',
+    'setup: three confirmed throwaway users',
     async () => {
       /** @type {TestUser[]} */
       const created = [];
       for (const label of ['a', 'b', 'c']) {
-        const user = await createConfirmedUser(admin, verifyEmail(runId, label), `SP Verify ${label.toUpperCase()}`, (id) =>
-          state.userIds.add(id),
-        );
+        const user = await provision(verifyEmail(runId, label), `SP Verify ${label.toUpperCase()}`);
+        state.userIds.add(user.id);
         created.push({ ...user, label: label.toUpperCase() });
       }
       return created;
@@ -965,7 +975,9 @@ async function main() {
 
   let aborted = null;
   try {
-    await runChecks(rec, { url, publishableKey, admin, runId, state });
+    /** @type {Provision} */
+    const provision = (email, displayName) => createConfirmedUser(admin, email, displayName);
+    await runChecks(rec, { url, publishableKey, provision, runId, state });
   } catch (error) {
     aborted = error instanceof AbortRun ? error.message : `unexpected error: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
@@ -990,12 +1002,15 @@ async function main() {
   return success ? 0 : 1;
 }
 
-main().then(
-  (code) => {
-    process.exitCode = code;
-  },
-  (error) => {
-    warn(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
-  },
-);
+// Run only as a script, not when another module imports `runChecks`.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error) => {
+      warn(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    },
+  );
+}

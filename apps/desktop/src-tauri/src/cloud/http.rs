@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderValue, ACCEPT, RETRY_AFTER};
+use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -73,24 +74,32 @@ impl SupabaseHttp {
     /// POST a JSON body; returns the status, `Retry-After` and the (bounded) body. Transport
     /// failures become [`RemoteError::Network`] with a short reason (never the URL or body).
     fn post(&self, path: &str, bearer: Option<&str>, body: &Value) -> Result<Reply, RemoteError> {
-        off_async_runtime(|| self.post_in_place(path, bearer, body))
+        off_async_runtime(|| self.send_in_place(Method::POST, path, bearer, Some(body)))
     }
 
-    fn post_in_place(
+    /// DELETE without a body (PostgREST filters are in the query string).
+    fn delete(&self, path: &str, bearer: &str) -> Result<Reply, RemoteError> {
+        off_async_runtime(|| self.send_in_place(Method::DELETE, path, Some(bearer), None))
+    }
+
+    fn send_in_place(
         &self,
+        method: Method,
         path: &str,
         bearer: Option<&str>,
-        body: &Value,
+        body: Option<&Value>,
     ) -> Result<Reply, RemoteError> {
         let mut apikey = HeaderValue::from_str(&self.config.publishable_key)
             .map_err(|_| RemoteError::Network("the app's Supabase key is malformed".into()))?;
         apikey.set_sensitive(true);
         let mut request = self
             .client
-            .post(format!("{}{path}", self.config.url))
+            .request(method, format!("{}{path}", self.config.url))
             .header("apikey", apikey)
-            .header(ACCEPT, "application/json")
-            .json(body);
+            .header(ACCEPT, "application/json");
+        if let Some(body) = body {
+            request = request.json(body);
+        }
         if let Some(token) = bearer {
             // Marked sensitive by reqwest (never printed in Debug output).
             request = request.bearer_auth(token);
@@ -706,7 +715,30 @@ impl RemoteApi for SupabaseHttp {
         )?;
         parse_sync_results(value)
     }
+
+    fn delete_time_entries(&self, access_token: &str, ids: &[String]) -> Result<(), RemoteError> {
+        // Only well-formed UUIDs go into the filter (they need no quoting); nothing else can be
+        // a server id. Chunks keep the URL far below proxy limits.
+        let ids: Vec<String> = ids
+            .iter()
+            .filter_map(|id| uuid::Uuid::parse_str(id.trim()).ok())
+            .map(|id| id.to_string())
+            .collect();
+        for chunk in ids.chunks(DELETE_CHUNK) {
+            let reply = self.delete(
+                &format!("/rest/v1/time_entries?id=in.({})", chunk.join(",")),
+                access_token,
+            )?;
+            if !reply.is_success() {
+                return Err(rest_error(&reply));
+            }
+        }
+        Ok(())
+    }
 }
+
+/// Ids per `DELETE` request (about 3.7 kB of query string).
+const DELETE_CHUNK: usize = 100;
 
 #[cfg(test)]
 mod tests {

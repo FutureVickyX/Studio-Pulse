@@ -219,4 +219,8 @@ pub trait RemoteApi: Send + Sync {
         workspace_id: &str,
         entries: &[RemoteTimeEntry],
     ) -> Result<Vec<EntryResult>, RemoteError>;
+
+    /// REST `DELETE /rest/v1/time_entries?id=in.(…)` as the user. RLS limits it to the user's
+    /// own rows; ids that are not there are ignored.
+    fn delete_time_entries(&self, access_token: &str, ids: &[String]) -> Result<(), RemoteError>;
 }

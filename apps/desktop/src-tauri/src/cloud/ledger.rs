@@ -76,6 +76,10 @@ pub trait SyncLedger: Send + Sync {
     /// are kept. Returns rows updated.
     fn mark_rejected(&self, rejections: &[(String, String)]) -> Result<usize, LedgerError>;
 
+    /// Which of `ids` still exist locally, in any state. Notices intervals deleted on this device
+    /// while their upload was in flight.
+    fn existing_ids(&self, ids: &[String]) -> Result<Vec<String>, LedgerError>;
+
     /// A transient failure for these rows: `sync_attempts += 1`, `last_sync_error = error`. They
     /// stay pending.
     fn record_attempt_failure(&self, ids: &[String], error: &str) -> Result<(), LedgerError>;

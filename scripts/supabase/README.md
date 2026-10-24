@@ -108,6 +108,10 @@ An end-to-end test of the real project.
   delete them and their workspaces afterwards.
 - Every check acts only through the publishable key: anonymously, or as one of those users after
   `signInWithPassword`, exactly like a client.
+- The checks are exported as `runChecks(rec, { url, publishableKey, provision, runId, state })`.
+  Another caller can pass a `provision(email, displayName)` that returns users it created itself
+  (for example with SQL), register their passwords with `registerSecret` so they are redacted,
+  and clean up afterwards. Importing the module does not run `main`.
 
 What it proves (one `PASS`/`FAIL` line each):
 
@@ -218,11 +222,15 @@ npm run check:secrets                       # default targets
 npm run check:secrets -- <file|dir> ...     # scan these instead
 ```
 
-**Default targets** (a missing one is reported and skipped; a missing explicit path is an error):
+**Default targets.** This is a release gate: a missing webview bundle or release executable fails
+the scan (exit 2) instead of passing without it. Only a missing installer is reported and skipped.
+A missing explicit path is an error.
 
 - `apps/desktop/dist`, the webview bundle;
 - `studio-pulse.exe`, the release executable, and the NSIS installer(s) in `bundle/nsis/` under
-  `$CARGO_TARGET_DIR/release`, default `%LOCALAPPDATA%/studio-pulse-build/target/release`;
+  Cargo's target directory: `$CARGO_TARGET_DIR/release`, or Cargo's default
+  `apps/desktop/src-tauri/target/release`. Run the scan with the same `CARGO_TARGET_DIR` the build
+  used;
 - `apps/desktop/src-tauri/src`.
 
 **What fails the scan.** Every file is searched in UTF-8/ASCII and in UTF-16LE (both alignments).
@@ -266,9 +274,16 @@ Verified offline (`npx vitest run tests/unit/database`):
 - every verification payload, run through the real `sync_time_entries` on PGlite;
 - the secret scanner on synthetic files.
 
-Not yet run, because it needs credentials in `supabase/.env.local`:
+Run against the hosted dev project (`studio-pulse-dev`, 18–19 October 2026), see
+[docs/supabase.md §3](../../docs/supabase.md#3-verify-against-the-real-project):
+
+- every check of `verify.mjs`, through `runChecks` with users provisioned by SQL: 35 of 35 PASS;
+- both Rust live tests (`supabase_live`) with a SQL-provisioned live-test user.
+
+Not yet run, because no secret key or database URL was put on disk (the migrations were applied
+through the Supabase connector instead):
 
 - `npm run supabase:migrate` / `:status` against the hosted project, including whether the
   pooler's certificate verifies with the system store or needs `SUPABASE_DB_SSL_CA`;
-- `npm run supabase:verify` end to end;
-- `--keep-user` together with the Rust live test.
+- the secret-key paths of `verify.mjs`: user creation and cleanup, `--keep-user` and
+  `--delete-live-user`.

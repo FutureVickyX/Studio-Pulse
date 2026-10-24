@@ -239,8 +239,23 @@ describe('scanFiles and the command line', () => {
     expect(targets.map((t) => t.label)).toEqual(['webview bundle', 'release executable', 'NSIS installer', 'desktop Rust sources']);
     expect(targets[1]!.path).toBe(join(targetDir, 'release', 'studio-pulse.exe'));
     expect(targets[2]!.path).toBe(join(targetDir, 'release', 'bundle', 'nsis', 'Studio Pulse_0.1.0_x64-setup.exe'));
+    expect(targets.map((t) => t.required)).toEqual([true, true, false, true]);
+    // Without CARGO_TARGET_DIR: Cargo's own default next to the crate, whatever LOCALAPPDATA says.
     const fallback = defaultTargets({ LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' });
-    expect(fallback[1]!.path).toBe(join('C:\\Users\\x\\AppData\\Local', 'studio-pulse-build', 'target', 'release', 'studio-pulse.exe'));
+    expect(fallback[1]!.path).toBe(join(REPO_ROOT, 'apps', 'desktop', 'src-tauri', 'target', 'release', 'studio-pulse.exe'));
+  });
+
+  it('fails the default scan when the release executable is missing, instead of passing without it', () => {
+    const targetDir = tempDir(); // no release build in it
+    const lines: string[] = [];
+    const code = main(['--env-path', join(targetDir, 'none.env')], {
+      out: (l) => lines.push(l),
+      err: (l) => lines.push(l),
+      env: { CARGO_TARGET_DIR: targetDir },
+    });
+    expect(code).toBe(2);
+    expect(lines.join('\n')).toMatch(/Missing (webview bundle|release executable)/);
+    expect(lines.join('\n')).not.toMatch(/No secrets found/);
   });
 
   it('the npm entry point exits 1 on a synthetic leak and prints no secret', () => {

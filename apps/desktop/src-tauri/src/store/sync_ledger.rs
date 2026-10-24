@@ -63,6 +63,10 @@ const RECORD_ATTEMPT_FAILURE: &str = "UPDATE tracking_events
     WHERE id IN (SELECT value FROM json_each(?1))
       AND +state = 'closed' AND +sync_status = 'pending'";
 
+/// `?1` = JSON array of ids; the ones present, in any state.
+const EXISTING_IDS: &str =
+    "SELECT id FROM tracking_events WHERE id IN (SELECT value FROM json_each(?1))";
+
 /// Rows recorded while signed out, open or closed, pending or rejected. A row that is already
 /// synced keeps its (absent) owner: it is on the server already and must not be re-attributed.
 const CLAIM_UNOWNED: &str = "UPDATE tracking_events
@@ -159,6 +163,19 @@ impl SyncLedger for Store {
                 updated += stmt.execute(params![id, truncate_error(reason)])?;
             }
             Ok(updated)
+        })
+        .map_err(ledger_error)
+    }
+
+    fn existing_ids(&self, ids: &[String]) -> Result<Vec<String>, LedgerError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.with_conn(|conn| {
+            let ids = serde_json::to_string(ids)?;
+            let mut stmt = conn.prepare_cached(EXISTING_IDS)?;
+            let rows = stmt.query_map(params![ids], |row| row.get::<_, String>(0))?;
+            Ok(rows.collect::<Result<_, _>>()?)
         })
         .map_err(ledger_error)
     }
