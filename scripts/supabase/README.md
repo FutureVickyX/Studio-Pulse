@@ -220,18 +220,21 @@ This deletes that user, its workspaces and the file. It only ever deletes an add
 ```bash
 npm run check:secrets                       # default targets
 npm run check:secrets -- <file|dir> ...     # scan these instead
+npm run check:secrets:web                   # only the workspace bundle, apps/web/dist
 ```
 
 **Default targets.** This is a release gate: a missing webview bundle or release executable fails
-the scan (exit 2) instead of passing without it. Only a missing installer is reported and skipped.
-A missing explicit path is an error.
+the scan (exit 2) instead of passing without it. A missing installer or workspace bundle is
+reported and skipped. A missing explicit path is an error, so `check:secrets:web` fails when the
+workspace hasn't been built.
 
 - `apps/desktop/dist`, the webview bundle;
 - `studio-pulse.exe`, the release executable, and the NSIS installer(s) in `bundle/nsis/` under
   Cargo's target directory: `$CARGO_TARGET_DIR/release`, or Cargo's default
   `apps/desktop/src-tauri/target/release`. Run the scan with the same `CARGO_TARGET_DIR` the build
   used;
-- `apps/desktop/src-tauri/src`.
+- `apps/desktop/src-tauri/src`;
+- `apps/web/dist`, the team workspace bundle (skipped if not built).
 
 **What fails the scan.** Every file is searched in UTF-8/ASCII and in UTF-16LE (both alignments).
 
@@ -243,11 +246,11 @@ A missing explicit path is an error.
 | `service-role-jwt` | a JWT whose payload `role` is `service_role` | never |
 | `user-jwt` | a JWT whose payload `role` is `authenticated` (a user's access token) | never |
 | `postgres-connection-string` | `postgres://` / `postgresql://` URLs | never |
-| `sb-secret-prefix`, `service-role-mention` | the bare words `sb_secret_` / `service_role` | only the desktop's rejection rule: `cloud/config.rs`, `build.rs` and the compiled exe |
+| `sb-secret-prefix`, `service-role-mention` | the bare words `sb_secret_` / `service_role` | only the rejection rules: the desktop's `cloud/config.rs`, `build.rs` and compiled exe, and the workspace bundle's `apps/web/dist/assets/index-*.js` (the bundled `@studio-pulse/database` config) |
 | `secret-key-env-name`, `db-url-env-name` | the names `SUPABASE_SECRET_KEY` / `SUPABASE_DB_URL` | never |
 
-The desktop has to recognise a secret key in order to refuse one, so its rule necessarily
-contains the two bare words. `--no-allowlist` fails on those too.
+The desktop and the workspace have to recognise a secret key in order to refuse one, so their
+rules necessarily contain the two bare words. `--no-allowlist` fails on those too.
 
 **Output and exit codes:**
 

@@ -109,15 +109,23 @@ describe('creating projects', () => {
     fails(await insertProject(w.alice, w.wsA, { created_by: null }), '42501', RLS_VIOLATION);
   });
 
-  it('clients cannot choose the id or timestamps', async () => {
+  it('clients cannot choose the timestamps or the version', async () => {
     const w = await buildWorld(db());
     for (const extra of [
-      { id: '00000000-0000-4000-8000-000000000001' },
       { created_at: '2020-01-01T00:00:00Z' },
       { updated_at: '2020-01-01T00:00:00Z' },
+      { version: 3 },
     ]) {
       fails(await insertProject(w.alice, w.wsA, extra), '42501', PERMISSION_DENIED);
     }
+  });
+
+  it('a client-chosen id makes a retried create fail instead of duplicating', async () => {
+    const w = await buildWorld(db());
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(ok(await insertProject(w.alice, w.wsA, { id }))).toBe(1);
+    fails(await insertProject(w.alice, w.wsA, { id }), '23505');
+    expect(await projectCount(w.wsA)).toBe(1);
   });
 
   it('validates name and description', async () => {
@@ -212,7 +220,7 @@ describe('deleting projects', () => {
     expect(await projectCount(w.wsA)).toBe(0);
   });
 
-  it('detaches tasks, notes and time entries without deleting them', async () => {
+  it('refuses while tasks, notes or time entries are attached, and deletes nothing', async () => {
     const w = await buildWorld(db());
     const project = await createProject(db(), w.alice, w.wsA);
     const keep = await createProject(db(), w.alice, w.wsA, 'Keep');
@@ -230,7 +238,9 @@ describe('deleting projects', () => {
     const timed = entry({ projectId: project, taskId: task });
     expect(ok(await sync(db(), w.carol, w.wsA, [timed]))[0]?.status).toBe('synced');
 
-    expect(ok(await db().affected(w.bob, `delete from public.projects where id = $1`, [project]))).toBe(1);
+    // With work attached: refused (archive instead), for any of the three kinds of work.
+    fails(await db().affected(w.bob, `delete from public.projects where id = $1`, [project]), '23503');
+    fails(await db().affected(w.alice, `delete from public.projects where id = $1`, [project]), '23503');
 
     const [after] = await db().admin<Record<string, unknown>>(
       `select (select project_id from public.tasks where id = $1) as task_project,
@@ -244,15 +254,18 @@ describe('deleting projects', () => {
       [task, otherTask, note, timed.id],
     );
     expect(after).toEqual({
-      task_project: null,
+      task_project: project,
       task_exists: 1,
       other_task_project: keep,
-      note_project: null,
+      note_project: project,
       note_exists: 1,
-      entry_project: null,
+      entry_project: project,
       entry_task: task,
       entry_active_ms: timed.activeMs,
     });
+    // An empty project still deletes.
+    const empty = await createProject(db(), w.alice, w.wsA, 'Empty');
+    expect(ok(await db().affected(w.bob, `delete from public.projects where id = $1`, [empty]))).toBe(1);
   });
 });
 

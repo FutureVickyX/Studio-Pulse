@@ -3,7 +3,7 @@
  * Pure helpers, unit-tested in tests/unit/desktop.
  */
 
-import type { Route } from '@studio-pulse/shared-types';
+import type { Route, WorkspaceSection } from '@studio-pulse/shared-types';
 
 export type Section = 'home' | 'tasks' | 'notes' | 'projects' | 'time' | 'team' | 'settings';
 
@@ -12,19 +12,22 @@ export type SettingsTab = 'general' | 'tracking' | 'applications' | 'privacy' | 
 export interface NavItem {
   section: Section;
   label: string;
-  /** False = a Phase-2 seam: shown disabled, never navigable. */
+  /** An in-app page. False for sections that live in the team workspace (see `workspace`). */
   available: boolean;
   /** Ctrl+<digit> shortcut. */
   digit: number;
+  /** Opens this page of the team workspace (apps/web) in the browser instead of an in-app page. */
+  workspace?: WorkspaceSection;
 }
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { section: 'home', label: 'Home', available: true, digit: 1 },
-  { section: 'tasks', label: 'Tasks', available: false, digit: 2 },
-  { section: 'notes', label: 'Notes', available: false, digit: 3 },
-  { section: 'projects', label: 'Projects', available: false, digit: 4 },
+  { section: 'tasks', label: 'Tasks', available: false, digit: 2, workspace: 'tasks' },
+  { section: 'notes', label: 'Notes', available: false, digit: 3, workspace: 'notes' },
+  { section: 'projects', label: 'Projects', available: false, digit: 4, workspace: 'projects' },
   { section: 'time', label: 'Time', available: true, digit: 5 },
-  { section: 'team', label: 'Team', available: false, digit: 6 },
+  // Team members and invitations are managed in Settings › Workspace.
+  { section: 'team', label: 'Team', available: true, digit: 6 },
   { section: 'settings', label: 'Settings', available: true, digit: 7 },
 ];
 
@@ -80,12 +83,14 @@ export function isSectionAvailable(section: Section): boolean {
 }
 
 /**
- * Resolve a navigation request against the current route. Phase-2 sections are ignored (the
- * current route is kept); bare `settings` opens the General tab.
+ * Resolve a navigation request against the current route. Sections that live in the team
+ * workspace are not in-app pages (the current route is kept); `team` opens Settings › Workspace;
+ * bare `settings` opens the General tab.
  */
 export function resolveNavigation(current: Route, requested: Route): Route {
   const section = sectionOf(requested);
   if (!isSectionAvailable(section)) return current;
+  if (requested === 'team') return 'settings/workspace';
   if (requested === 'settings') return 'settings/general';
   return requested;
 }

@@ -44,8 +44,13 @@ describe('NAV_ITEMS', () => {
     ]);
   });
 
-  it('marks only Home, Time and Settings available in Phase 1', () => {
-    expect(NAV_ITEMS.filter((item) => item.available).map((item) => item.section)).toEqual(['home', 'time', 'settings']);
+  it('in-app pages are Home, Time, Team and Settings; Tasks, Notes and Projects open the team workspace', () => {
+    expect(NAV_ITEMS.filter((item) => item.available).map((item) => item.section)).toEqual(['home', 'time', 'team', 'settings']);
+    expect(NAV_ITEMS.filter((item) => item.workspace).map((item) => [item.section, item.workspace])).toEqual([
+      ['tasks', 'tasks'],
+      ['notes', 'notes'],
+      ['projects', 'projects'],
+    ]);
   });
 });
 
@@ -94,7 +99,7 @@ describe('isSectionAvailable', () => {
     ['notes', false],
     ['projects', false],
     ['time', true],
-    ['team', false],
+    ['team', true],
     ['settings', true],
   ] as const)('%s → %s', (section, available) => {
     expect(isSectionAvailable(section)).toBe(available);
@@ -112,12 +117,16 @@ describe('resolveNavigation', () => {
     expect(resolveNavigation('home', 'settings')).toBe('settings/general');
   });
 
-  it.each(['tasks', 'notes', 'projects', 'team'] as const)('keeps the current route for Phase-2 %s', (requested) => {
+  it.each(['tasks', 'notes', 'projects'] as const)('keeps the current route for %s (a team-workspace page)', (requested) => {
     expect(resolveNavigation('time', requested)).toBe('time');
     expect(resolveNavigation('settings/about', requested)).toBe('settings/about');
   });
 
-  it('allows the Phase-2 settings tabs, which explain what is coming', () => {
+  it('opens Settings › Workspace for Team', () => {
+    expect(resolveNavigation('home', 'team')).toBe('settings/workspace');
+  });
+
+  it('allows the workspace and sync settings tabs', () => {
     expect(resolveNavigation('home', 'settings/workspace')).toBe('settings/workspace');
     expect(resolveNavigation('home', 'settings/sync')).toBe('settings/sync');
   });

@@ -28,6 +28,8 @@ const TABLES = [
   'notes',
   'profiles',
   'projects',
+  'task_comments',
+  'task_subtasks',
   'tasks',
   'time_entries',
   'workspace_invitations',
@@ -57,6 +59,11 @@ const RPC_CALLS: ReadonlyArray<[string, string, (world: World) => unknown[]]> = 
     (w) => [w.wsA],
   ],
   ['my_workspaces', `select * from public.my_workspaces()`, () => []],
+  [
+    'set_time_entry_attribution',
+    `select public.set_time_entry_attribution($1::uuid[], null, null)`,
+    () => [[]],
+  ],
   [
     'sync_time_entries',
     `select * from public.sync_time_entries($1, $2::jsonb)`,

@@ -153,33 +153,77 @@ describe('creating notes', () => {
     fails(await insertNote(w.gina, w.wsA, { project_id: projectB }), '23503');
   });
 
-  it('clients cannot choose the version, id or timestamps; title length is limited', async () => {
+  it('clients cannot choose the version or timestamps; title length is limited', async () => {
     const w = await buildWorld(db());
     for (const extra of [
       { version: 7 },
-      { id: '00000000-0000-4000-8000-0000000000ae' },
       { created_at: '2020-01-01T00:00:00Z' },
       { updated_at: '2020-01-01T00:00:00Z' },
+      { archived_at: '2020-01-01T00:00:00Z' },
     ]) {
       fails(await insertNote(w.carol, w.wsA, extra), '42501', PERMISSION_DENIED);
     }
     fails(await insertNote(w.carol, w.wsA, { title: 't'.repeat(201) }), '23514');
   });
+
+  it('a client-chosen id makes a retried create fail instead of duplicating', async () => {
+    const w = await buildWorld(db());
+    const id = '00000000-0000-4000-8000-0000000000ae';
+    expect(ok(await insertNote(w.carol, w.wsA, { id }))).toBe(1);
+    fails(await insertNote(w.carol, w.wsA, { id }), '23505');
+    const [count] = await db().admin<{ n: number }>(`select count(*)::int as n from public.notes where id = $1`, [id]);
+    expect(count?.n).toBe(1);
+  });
 });
 
 describe('updating notes', () => {
-  it('only the owner edits, even a workspace note and even against the workspace owner', async () => {
+  it('a private note is edited by its owner only, even against the workspace owner', async () => {
+    const w = await buildWorld(db());
+    const secret = await createNote(db(), w.carol, w.wsA, 'private', 'original');
+    for (const user of [w.alice, w.bob, w.dave, w.gina, w.erin, w.mallory]) {
+      expect(ok(await updateNote(user, secret, `body = 'overwritten'`)), user.label).toBe(0);
+    }
+    expect((await stored(secret)).body).toBe('original');
+    expect(ok(await updateNote(w.carol, secret, `body = 'edited', pinned = true`))).toBe(1);
+    expect(await stored(secret)).toMatchObject({ body: 'edited', pinned: true });
+  });
+
+  it('a workspace note is edited by any active member of its workspace, and by nobody else', async () => {
     const w = await buildWorld(db());
     const shared = await createNote(db(), w.carol, w.wsA, 'workspace', 'original');
-    const secret = await createNote(db(), w.carol, w.wsA, 'private', 'original');
-    for (const note of [shared, secret]) {
-      for (const user of [w.alice, w.bob, w.dave, w.gina, w.erin, w.mallory]) {
-        expect(ok(await updateNote(user, note, `body = 'overwritten'`)), user.label).toBe(0);
-      }
-      expect((await stored(note)).body).toBe('original');
-      expect(ok(await updateNote(w.carol, note, `body = 'edited', pinned = true`))).toBe(1);
-      expect(await stored(note)).toMatchObject({ body: 'edited', pinned: true });
+    for (const user of [w.erin, w.frank, w.mallory]) {
+      expect(ok(await updateNote(user, shared, `body = 'overwritten'`)), user.label).toBe(0);
     }
+    expect((await stored(shared)).body).toBe('original');
+    let version = (await stored(shared)).version;
+    for (const user of [w.alice, w.bob, w.dave, w.gina]) {
+      expect(ok(await updateNote(user, shared, `body = $2`, [`by ${user.label}`])), user.label).toBe(1);
+      const after = await stored(shared);
+      expect(after.body).toBe(`by ${user.label}`);
+      expect(after.version).toBe(version + 1);
+      version = after.version;
+    }
+    // Ownership stays with the author.
+    expect((await stored(shared)).owner_id).toBe(w.carol.id);
+  });
+
+  it('only the owner changes a shared note’s visibility, project, pin or archive state', async () => {
+    const w = await buildWorld(db());
+    const project = await createProject(db(), w.alice, w.wsA);
+    const shared = await createNote(db(), w.carol, w.wsA, 'workspace', 'original');
+    for (const assignment of [
+      `visibility = 'private'`,
+      `project_id = '${project}'`,
+      `pinned = true`,
+      `archived_at = now()`,
+    ]) {
+      fails(await updateNote(w.alice, shared, assignment), '42501');
+      fails(await updateNote(w.dave, shared, assignment), '42501');
+    }
+    const before = await stored(shared);
+    expect(before).toMatchObject({ visibility: 'workspace', project_id: null, pinned: false });
+    expect(ok(await updateNote(w.carol, shared, `pinned = true, project_id = $2, archived_at = now()`, [project]))).toBe(1);
+    expect(await stored(shared)).toMatchObject({ pinned: true, project_id: project });
   });
 
   it('owner_id, workspace_id and version are not writable, and triggers back that up', async () => {

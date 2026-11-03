@@ -28,6 +28,8 @@ const COMMANDS: &[&str] = &[
     "show_main_window",
     "hide_indicator",
     "quit_app",
+    // Phase 2B: open the team workspace (apps/web) in the browser.
+    "open_workspace",
     // Phase 2A: account, workspaces and sync.
     "get_account_status",
     "sign_in",
@@ -95,6 +97,7 @@ fn is_secret_key(key: &str) -> bool {
 fn main() {
     println!("cargo:rerun-if-env-changed={URL_ENV}");
     println!("cargo:rerun-if-env-changed={KEY_ENV}");
+    println!("cargo:rerun-if-env-changed=STUDIO_PULSE_WORKSPACE_URL");
     if let Ok(key) = std::env::var(KEY_ENV) {
         if is_secret_key(&key) {
             // Do not print the key.

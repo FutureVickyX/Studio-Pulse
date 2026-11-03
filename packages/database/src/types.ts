@@ -203,6 +203,10 @@ export type Database = {
           created_by: string | null;
           created_at: string;
           updated_at: string;
+          lead_id: string | null;
+          start_date: string | null;
+          due_date: string | null;
+          version: number;
         };
         Insert: {
           id?: string;
@@ -213,6 +217,10 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          lead_id?: string | null;
+          start_date?: string | null;
+          due_date?: string | null;
+          version?: number;
         };
         Update: {
           id?: string;
@@ -223,6 +231,10 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          lead_id?: string | null;
+          start_date?: string | null;
+          due_date?: string | null;
+          version?: number;
         };
         Relationships: [
           {
@@ -230,6 +242,13 @@ export type Database = {
             columns: ['created_by'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'projects_lead_id_fkey';
+            columns: ['lead_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
           {
@@ -258,6 +277,7 @@ export type Database = {
           completed_at: string | null;
           created_at: string;
           updated_at: string;
+          version: number;
         };
         Insert: {
           id?: string;
@@ -275,6 +295,7 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          version?: number;
         };
         Update: {
           id?: string;
@@ -292,6 +313,7 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          version?: number;
         };
         Relationships: [
           {
@@ -337,6 +359,7 @@ export type Database = {
           version: number;
           created_at: string;
           updated_at: string;
+          archived_at: string | null;
         };
         Insert: {
           id?: string;
@@ -350,6 +373,7 @@ export type Database = {
           version?: number;
           created_at?: string;
           updated_at?: string;
+          archived_at?: string | null;
         };
         Update: {
           id?: string;
@@ -363,6 +387,7 @@ export type Database = {
           version?: number;
           created_at?: string;
           updated_at?: string;
+          archived_at?: string | null;
         };
         Relationships: [
           {
@@ -480,6 +505,119 @@ export type Database = {
           },
         ];
       };
+      task_subtasks: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          task_id: string;
+          title: string;
+          done: boolean;
+          position: number;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          task_id: string;
+          title: string;
+          done?: boolean;
+          position?: number;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          task_id?: string;
+          title?: string;
+          done?: boolean;
+          position?: number;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'task_subtasks_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'task_subtasks_task_id_workspace_id_fkey';
+            columns: ['task_id', 'workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
+            referencedColumns: ['id', 'workspace_id'];
+          },
+          {
+            foreignKeyName: 'task_subtasks_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      task_comments: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          task_id: string;
+          author_id: string;
+          body: string;
+          created_at: string;
+          updated_at: string;
+          edited_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          task_id: string;
+          author_id?: string;
+          body: string;
+          created_at?: string;
+          updated_at?: string;
+          edited_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          task_id?: string;
+          author_id?: string;
+          body?: string;
+          created_at?: string;
+          updated_at?: string;
+          edited_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'task_comments_author_id_fkey';
+            columns: ['author_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'task_comments_task_id_workspace_id_fkey';
+            columns: ['task_id', 'workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
+            referencedColumns: ['id', 'workspace_id'];
+          },
+          {
+            foreignKeyName: 'task_comments_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -544,6 +682,12 @@ export type Database = {
         };
         Returns: undefined;
       };
+      set_time_entry_attribution: {
+        /** Omit both to clear the attribution. A task decides its project. At most 1000 ids. */
+        Args: { p_entry_ids: string[]; p_project_id?: string | null; p_task_id?: string | null };
+        /** The number of the caller's entries changed. */
+        Returns: number;
+      };
       set_time_entry_visibility: {
         Args: {
           p_workspace_id: string;
@@ -567,7 +711,7 @@ export type Database = {
       workspace_role: 'owner' | 'admin' | 'member';
       membership_status: 'active' | 'removed';
       time_entry_visibility: 'private' | 'admins';
-      project_status: 'active' | 'archived';
+      project_status: 'planning' | 'active' | 'on_hold' | 'completed' | 'archived';
       task_status: 'inbox' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'archived';
       task_priority: 'low' | 'normal' | 'high' | 'urgent';
       note_visibility: 'private' | 'workspace';

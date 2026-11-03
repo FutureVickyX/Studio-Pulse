@@ -29,6 +29,7 @@
     "allow-get-app-info",
     "allow-show-main-window",
     "allow-quit-app",
+    "allow-open-workspace",
     "allow-get-account-status",
     "allow-sign-in",
     "allow-sign-up",

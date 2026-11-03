@@ -671,19 +671,30 @@ export async function runChecks(rec, { url, publishableKey, provision, runId, st
     expect.noRows(await A.from('time_entries').select('id').eq('id', entryB.id), 'the owner reading B\'s entry after switching back');
   });
 
-  await rec.check('privacy: private notes stay private, workspace notes are shared, only the owner edits', async () => {
+  await rec.check('privacy: private notes stay private; members edit shared notes, only the owner changes sharing', async () => {
     const seenByB = rowsOf({ data: expect.ok(await B.from('notes').select('id').eq('workspace_id', ws), 'B reading notes') });
     const ids = new Set(seenByB.map((n) => n.id));
     expect.that(ids.has(own.sharedNoteId), 'B cannot read the workspace note');
     expect.that(!ids.has(own.privateNoteId), 'B can read A\'s private note');
-    expect.noRows(await B.from('notes').update({ title: 'edited by B' }).eq('id', own.sharedNoteId).select('id'), 'B editing A\'s note');
+    expect.noRows(await B.from('notes').update({ title: 'edited by B' }).eq('id', own.privateNoteId).select('id'), 'B editing A\'s private note');
     expect.noRows(await B.from('notes').delete().eq('id', own.sharedNoteId).select('id'), 'B deleting A\'s note');
+    // Shared notes are collaborative (Phase 2B): a member edits the text, which bumps the version...
+    const byB = await B.from('notes').update({ title: 'Shared (edited by B)' }).eq('id', own.sharedNoteId).select('version').single();
+    const versionB = /** @type {{ version: number }} */ (expect.ok(byB, 'B editing the shared note')).version;
+    expect.that(versionB === 2, `an edit did not bump the note version (got ${versionB})`);
+    // ...but only the owner changes who can see it.
+    expect.denied(await B.from('notes').update({ visibility: 'private' }).eq('id', own.sharedNoteId).select('id'), 'B making A\'s note private', ['42501']);
     const nb = await B.from('notes').insert({ workspace_id: ws, title: 'B private', visibility: 'private' }).select('id').single();
     const noteB = /** @type {{ id: string }} */ (expect.ok(nb, 'B inserting a private note'));
     expect.noRows(await A.from('notes').select('id').eq('id', noteB.id), 'the owner reading B\'s private note');
-    const edited = await A.from('notes').update({ title: 'Shared (edited)' }).eq('id', own.sharedNoteId).select('version').single();
+    // A save based on an outdated version matches nothing (the client reports a conflict).
+    expect.noRows(
+      await A.from('notes').update({ title: 'stale' }).eq('id', own.sharedNoteId).eq('version', 1).select('id'),
+      'a save based on an outdated version',
+    );
+    const edited = await A.from('notes').update({ title: 'Shared (edited)' }).eq('id', own.sharedNoteId).eq('version', 2).select('version').single();
     const version = /** @type {{ version: number }} */ (expect.ok(edited, 'the owner editing its note')).version;
-    expect.that(version === 2, `an edit did not bump the note version (got ${version})`);
+    expect.that(version === 3, `an edit did not bump the note version (got ${version})`);
   });
 
   // -- Anonymous access ---------------------------------------------------------------------------

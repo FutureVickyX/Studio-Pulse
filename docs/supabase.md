@@ -1,9 +1,15 @@
-# Studio Pulse — Supabase backend (Phase 2A)
+# Studio Pulse — Supabase backend (Phases 2A and 2B)
 
 Phase 2A adds team identity, a workspace-scoped Postgres schema protected by Row Level Security,
 and reliable upload of the intervals the desktop tracker records locally. The tracker, idle
 detection and startup behaviour from Phase 1 are unchanged: everything still works offline, and
 the local SQLite database stays the source of truth until the server confirms an upload.
+
+Phase 2B adds the team workspace (`apps/web`, see [workspace.md](workspace.md)) on the same
+schema: project leads, dates and statuses, task checklists and comments, shared notes that members
+edit, version-based conflict detection, and attribution of synced time to projects and tasks. It
+is one additive migration. Nothing from Phase 2A was replaced, and no access to data that was
+protected before was widened.
 
 ## 1. Set up a project
 
@@ -12,7 +18,9 @@ the local SQLite database stays the source of truth until the server confirms an
    *Confirm email* for any project real people use**. `accept_invitation` trusts the email in the
    user's JWT. Without confirmation, someone could register an address they don't own and
    accept an invitation sent to it. New accounts then click the emailed link before their first
-   sign-in.
+   sign-in. Also turn on **leaked password protection** in the Auth password settings (it refuses
+   passwords found in known breaches) where your plan offers it. The security advisor reports it
+   while it is off.
 3. Copy `supabase/.env.example` to `supabase/.env.local` (gitignored) and fill in:
 
 | Variable | Where | Used by |
@@ -44,6 +52,8 @@ Migrations live in `supabase/migrations/` and run in filename order:
 | `20261017090400_advisor_hardening.sql` | Fixes from Supabase's database advisors. The four RLS helpers move to a `private` schema that the API does not expose. Policies evaluate `auth.uid()` once per statement. Every foreign key gets a covering index. No behaviour changes |
 | `20261017090500_owner_succession.sql` | Deleting the last owner's account no longer leaves an unmanageable workspace: the longest-standing active admin (else member) becomes owner |
 | `20261017090600_text_bounds.sql` | Names, titles and uploaded application names are stored trimmed, so their length limits bound the stored value; invitation emails are capped at 320 characters |
+| `20261024090000_workspace_collaboration.sql` | Phase 2B. Project statuses (planning, on hold, completed), lead, start and due dates; `version` on projects and tasks; `task_subtasks` and `task_comments`; shared notes editable by members (sharing, project, pin and archive stay owner-only); `archived_at` on notes; time attribution (`set_time_entry_attribution`); deletion guards that keep history; client-supplied ids for idempotent creates; the shared tables join `supabase_realtime` |
+| `20261029090000_collaboration_fixes.sql` | Phase 2B review fixes. A project's lead and a task's assignee are validated when they change, so a project or task that still names a former member stays editable by those allowed to edit it. Moving a task to another project moves its tracked time with it (refused into an archived project) |
 
 ```bash
 npm run supabase:migrate:status
@@ -112,6 +122,36 @@ through the publishable key, as those users.
 - Supabase security advisor: only lint 0029 for the eight RPCs in §5, which are the intended API.
   Performance advisor: only "unused index", as expected on an empty database.
 
+### Results after the Phase 2B migration (24 October 2026)
+
+- Migration 8 applied with the same contents as the file (only its header comment was corrected
+  afterwards).
+- `runChecks`, with three users provisioned by SQL: **35 of 35 PASS**. The notes check now also
+  asserts that members edit shared notes, that only the owner changes sharing, and that a stale
+  version saves nothing.
+- `tests/live/workspace.live.test.ts`, the workspace's own data layer as three real users through
+  the publishable key: **7 of 7 pass**. It covers membership listing, projects, tasks with
+  idempotent creates, checklists and comments, notes, time attribution, and realtime: teammates
+  received workspace changes, and a private note was never delivered to anyone but its owner. See
+  [tests/live/README.md](../tests/live/README.md).
+- Security advisor: still only lint 0029 for the same eight RPCs (`set_time_entry_attribution` is
+  `SECURITY INVOKER`, so it isn't flagged). Performance advisor: only "unused index".
+
+### Results after the review fixes (migration 9, 29 October – 3 November 2026)
+
+- Migration 9 applied with exactly the file's contents (checksums match), recorded as
+  `20261029090000`. The PGlite suite covers it (`collaboration.test.ts` › "former members and
+  moved tasks", and the reassignment test in `tasks.test.ts`).
+- `runChecks`, with three users provisioned by SQL: **35 of 35 PASS**.
+- `tests/live/workspace.live.test.ts`, with the web data layer's paged list reads: **7 of 7 pass**,
+  including realtime (teammates receive workspace changes, nobody receives another user's private
+  note).
+- Security advisor: still only lint 0029 for the same eight RPCs, plus "leaked password protection
+  disabled", an Auth setting to turn on in the dashboard (§1). `tasks_move_time` is
+  `SECURITY DEFINER` but not executable by clients, so it isn't flagged. Performance advisor: only
+  "unused index".
+- Every throwaway user, workspace and row was deleted afterwards; the project was left empty.
+
 ## 4. Build the desktop app against the project
 
 The desktop app needs only the two public values, embedded at build time:
@@ -160,13 +200,35 @@ configured in this build. Debug builds also read the two variables at runtime.
 - **Same-workspace integrity is structural.** Composite foreign keys `(project_id, workspace_id)`
   and `(task_id, workspace_id)` make a cross-workspace reference impossible. Triggers forbid
   changing `workspace_id`, or a note's owner, after insert.
-- **Notes.** `private` notes are visible to their owner only. `workspace` notes are visible to
-  members. Only the owner edits. Updates bump `version`, so Phase 2B clients can detect conflicts
-  instead of overwriting.
+- **Projects and tasks (Phase 2B).** Members read both. Owners and admins create projects. A
+  project's lead may edit it, but only owners and admins change the lead. A new lead, like a new
+  assignee, must be an active member; the check runs when the lead or assignee changes
+  (migration 9), so a project or task that still names a former member stays editable. Members create tasks as themselves and assign only active members. The creator, the
+  assignee or an owner/admin edits a task, and anyone who may edit a task edits its checklist.
+  Members comment as themselves; authors edit their own comments; authors and owners/admins
+  delete them.
+- **Versions.** Every update to a project, task or note bumps `version`. Clients save with
+  `version = <the version they showed>` and treat zero updated rows as a conflict, so nothing is
+  overwritten.
+- **Notes.** `private` notes are visible to their owner only. `workspace` (shared) notes are
+  visible to members, and members may edit their title and text. Only the owner changes a note's
+  sharing, project, pin or archive state (a trigger refuses it with `42501`), so a teammate can't
+  hide a shared note from the team.
+- **History is kept.** A project with tasks, notes or tracked time can't be deleted, and nor can a
+  task with tracked time (`23503`, "archive it instead"). Deleting a whole workspace still
+  cascades.
+- **Idempotent creates.** Clients may supply the id of a new project, task, note, checklist item
+  or comment. A create retried after a lost response then fails with `23505` instead of
+  creating a duplicate, and the client reads back the row that landed.
 - **Time entries are private by default.** Only the member who recorded them can read them. An
   owner may set the workspace's visibility to `admins`, which lets owners and admins read
-  members' entries. Entries are immutable: there is no update policy. Members can delete their
-  own.
+  members' entries. Everything measured is immutable. Since Phase 2B, the owner of an entry may
+  update only `project_id` and `task_id` (attribution), directly or with
+  `set_time_entry_attribution(entry_ids, project, task)`. That function is `SECURITY INVOKER`
+  and updates at most 1,000 of the caller's own entries per call. A trigger sets the project from
+  the task and refuses new time on archived projects and tasks. When a task moves to another
+  project, a `SECURITY DEFINER` trigger moves every entry attributed to it along (migration 9),
+  so time always counts on the task's project. Members can delete their own entries.
 - **Tokens stay out of the webview.** The desktop signs in from Rust. The refresh token is stored
   in **Windows Credential Manager** (`Studio Pulse/supabase/<project-ref>`); the access token stays
   in memory. The UI only receives status snapshots.
@@ -211,6 +273,9 @@ Each closed interval uploads these fields:
 Never uploaded: window titles, executable paths, keystrokes, screenshots, clipboard, file names or
 contents. This is the Phase 1 privacy boundary, unchanged.
 
+The tracker never uploads `project_id` or `task_id`. They stay empty until the entry's owner
+attributes it in the team workspace. Nothing assigns them automatically.
+
 ## 9. Behaviour worth knowing
 
 These are asserted by `tests/integration/supabase`:
@@ -221,8 +286,10 @@ These are asserted by `tests/integration/supabase`:
   `set_member_role` to promote someone.
 - **A removed member keeps their own time entries** in that workspace and can still read or
   delete them, but cannot add new ones.
-- **A removed assignee must be reassigned.** Once an assignee leaves the workspace, a task that
-  still names them can't be edited until the assignee is changed or cleared.
+- **A removed assignee or lead stays named until someone changes it.** Since migration 9 the
+  task or project stays editable by those allowed to edit it; a new assignee or lead must be an
+  active member. (Before migration 9, any edit of such a task or project failed until the
+  assignee or lead was changed.)
 - **Deleting an account keeps every workspace managed.** Deleting a user in Authentication ›
   Users cascades to their memberships. If they were a workspace's last active owner, the
   longest-standing active admin becomes owner, or else the longest-standing active member. Removed
@@ -238,6 +305,20 @@ These are asserted by `tests/integration/supabase`:
   workspace is switched after a lost response. The entry stays where it was first uploaded and
   is reported `synced` (`already present`). Nothing is duplicated or moved.
 
+Phase 2B (`tests/integration/supabase/collaboration.test.ts` and the updated suites):
+
+- **Choosing a task decides the project.** Attributing an entry to a task sets its project to
+  the task's project, whatever the client sent. Moving the task later moves its entries too; a
+  move into an archived project is refused (`22023`).
+- **Archived projects and tasks keep their time but take no new time.** Restore one to attribute
+  more.
+- **Attribution only ever touches your own entries in the target's workspace.** That holds even for
+  an owner who can read members' entries. Other ids are ignored, and the function returns how
+  many rows changed. A project or task you can't see is reported as not found (`P0002`).
+- **A removed member can no longer attribute.** They keep reading and deleting their own
+  entries, as before. They lose task threads too, including their own comments.
+- **Comments record `edited_at`** when their text changes.
+
 ## 10. Troubleshooting
 
 | Symptom | Cause |
@@ -248,3 +329,6 @@ These are asserted by `tests/integration/supabase`:
 | Pending count doesn't fall, status "Can't reach Supabase" | Offline or project paused; retries continue automatically. "Sync now" retries immediately |
 | "Couldn't finish signing out" | Windows Credential Manager or the local database refused a change. You are still signed in; try again |
 | Entries marked rejected | The server judged the entry invalid. It is kept locally; the reason is in Settings › Sync |
+| "This project has tasks, notes or tracked time; archive it instead" | Deleting a project with work attached is refused, to keep history. Archive it |
+| "Archived projects take no new time" | Restore the project (or task) before attributing time to it |
+| "Only the note's owner can change its sharing, project, pin or archive state" | Ask the owner to change it |

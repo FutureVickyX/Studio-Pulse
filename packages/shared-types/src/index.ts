@@ -326,7 +326,12 @@ export interface AppInfo {
   dataDirectory: string;
   /** This process was started by Windows at sign-in (`--autostart`). */
   launchedAtLogin: boolean;
+  /** The team workspace (apps/web) this build links to, or null. A public URL. */
+  workspaceUrl: string | null;
 }
+
+/** A page of the team workspace (apps/web) the desktop can open in the browser. */
+export type WorkspaceSection = 'overview' | 'projects' | 'tasks' | 'notes' | 'time';
 
 
 // ---------------------------------------------------------------------------------------------
@@ -496,6 +501,8 @@ export interface CommandMap {
   show_main_window: { args: { route: Route | null }; result: null };
   hide_indicator: { args: Record<string, never>; result: null };
   quit_app: { args: Record<string, never>; result: null };
+  // Phase 2B — open the team workspace in the browser (main window only)
+  open_workspace: { args: { section: WorkspaceSection }; result: null };
   // Phase 2A — account, workspaces and sync (main window only)
   get_account_status: { args: Record<string, never>; result: AccountStatus };
   sign_in: { args: { input: SignInInput }; result: AccountStatus };

@@ -128,16 +128,26 @@ describe('creating tasks', () => {
     fails(await insertTask(w.carol, w.wsA, { project_id: '00000000-0000-4000-8000-0000000000ac' }), '23503');
   });
 
-  it('clients cannot set the id, completed_at or timestamps', async () => {
+  it('clients cannot set completed_at, the version or timestamps', async () => {
     const w = await buildWorld(db());
     for (const extra of [
-      { id: '00000000-0000-4000-8000-0000000000ad' },
       { completed_at: '2026-01-01T00:00:00Z' },
       { created_at: '2026-01-01T00:00:00Z' },
       { updated_at: '2026-01-01T00:00:00Z' },
+      { version: 9 },
     ]) {
       fails(await insertTask(w.carol, w.wsA, extra), '42501', PERMISSION_DENIED);
     }
+  });
+
+  it('a client-chosen id makes a retried create fail instead of duplicating', async () => {
+    const w = await buildWorld(db());
+    const id = '00000000-0000-4000-8000-0000000000ad';
+    expect(ok(await insertTask(w.carol, w.wsA, { id }))).toBe(1);
+    fails(await insertTask(w.carol, w.wsA, { id }), '23505');
+    // Even another member retrying the same id cannot create a second task.
+    fails(await insertTask(w.dave, w.wsA, { id, title: 'Other' }), '23505');
+    expect((await stored(id)).title).toBe('Task');
   });
 
   it('validates title, dates and estimate', async () => {
@@ -219,7 +229,7 @@ describe('updating tasks', () => {
     expect(ok(await updateTask(w.carol, task, `assignee_id = $2`, [w.gina.id]))).toBe(1);
     ok(await removeMember(db(), w.alice, w.wsA, w.dave));
     for (const assignee of [w.mallory, w.frank, w.erin, w.dave]) {
-      fails(await updateTask(w.carol, task, `assignee_id = $2`, [assignee.id]), '42501', RLS_VIOLATION);
+      fails(await updateTask(w.carol, task, `assignee_id = $2`, [assignee.id]), '42501', /assignee must be an active member/);
     }
     expect((await stored(task)).assignee_id).toBe(w.gina.id);
     expect(ok(await updateTask(w.carol, task, `assignee_id = null`))).toBe(1);
@@ -243,15 +253,17 @@ describe('updating tasks', () => {
     expect(await stored(task)).toMatchObject({ workspace_id: w.wsA, created_by: w.gina.id });
   });
 
-  it('a task still assigned to a removed member must be reassigned on its next edit', async () => {
+  it('a task still assigned to a removed member stays editable; a new assignee must be active', async () => {
     const w = await buildWorld(db());
     const task = await createTask(db(), w.carol, w.wsA, { assigneeId: w.dave.id });
     ok(await removeMember(db(), w.alice, w.wsA, w.dave));
-    // The stale assignment no longer satisfies the assignee rule, so any edit that keeps it fails...
-    fails(await updateTask(w.carol, task, `status = 'done'`), '42501', RLS_VIOLATION);
-    fails(await updateTask(w.alice, task, `status = 'done'`), '42501', RLS_VIOLATION);
-    // ...and the same edit with a valid assignee succeeds.
-    expect(ok(await updateTask(w.carol, task, `status = 'done', assignee_id = null`))).toBe(1);
+    // Since migration 9 the assignee is checked when it changes, so edits that keep it work,
+    // also when the client sends the unchanged assignee again...
+    expect(ok(await updateTask(w.carol, task, `status = 'in_progress'`))).toBe(1);
+    expect(ok(await updateTask(w.alice, task, `status = 'done', assignee_id = $2`, [w.dave.id]))).toBe(1);
+    // ...while assigning someone who isn't an active member is still refused.
+    fails(await updateTask(w.alice, task, `assignee_id = $2`, [w.erin.id]), '42501', /active member/);
+    expect(ok(await updateTask(w.carol, task, `assignee_id = null`))).toBe(1);
     // The removed assignee lost every right on it.
     expect(ok(await updateTask(w.dave, task, `title = 'x'`))).toBe(0);
   });

@@ -1,14 +1,16 @@
 /**
  * Workspace keyboard map. Pure: takes the relevant key-event fields, returns an action.
- * Ctrl+1…7 sections (Phase-2 sections ignored), Ctrl+, Settings, Ctrl+Shift+P pause/resume,
+ * Ctrl+1…7 sections (Tasks, Notes and Projects open the team workspace in the browser), Ctrl+,
+ * Settings, Ctrl+Shift+P pause/resume,
  * `?` shortcuts sheet. Unit-tested in tests/unit/desktop.
  */
 
-import type { Route } from '@studio-pulse/shared-types';
+import type { Route, WorkspaceSection } from '@studio-pulse/shared-types';
 import { NAV_ITEMS, navItemForDigit } from './routes';
 
 export type ShortcutAction =
   | { type: 'navigate'; route: Route }
+  | { type: 'openWorkspace'; section: WorkspaceSection }
   | { type: 'togglePause' }
   | { type: 'showShortcuts' };
 
@@ -53,6 +55,8 @@ export function matchShortcut(input: KeyInput, context: KeyContext): ShortcutAct
     const digit = digitOf(input);
     if (digit !== null) {
       const item = navItemForDigit(digit);
+      // Opening the browser is not idempotent: holding the keys must not open a tab per repeat.
+      if (item?.workspace) return input.repeat ? null : { type: 'openWorkspace', section: item.workspace };
       if (!item || !item.available) return null;
       return { type: 'navigate', route: item.section };
     }
@@ -74,11 +78,11 @@ export interface ShortcutDescription {
   description: string;
 }
 
-/** The shortcuts sheet: one Ctrl+digit row per section that is available in this phase. */
+/** The shortcuts sheet: one Ctrl+digit row per section. */
 export const SHORTCUTS: readonly ShortcutDescription[] = [
-  ...NAV_ITEMS.filter((item) => item.available).map((item) => ({
+  ...NAV_ITEMS.filter((item) => item.available || item.workspace).map((item) => ({
     keys: ['Ctrl', String(item.digit)],
-    description: item.label,
+    description: item.workspace ? `${item.label} (team workspace)` : item.label,
   })),
   { keys: ['Ctrl', ','], description: 'Settings' },
   { keys: ['Ctrl', 'Shift', 'P'], description: 'Pause or resume tracking' },
@@ -86,12 +90,11 @@ export const SHORTCUTS: readonly ShortcutDescription[] = [
   { keys: ['Esc'], description: 'Close a dialog or menu' },
 ];
 
-/** Sentence for the sheet's footnote, e.g. "Tasks, Notes, Projects and Team (Ctrl+2, 3, 4, 6) arrive in Phase 2." */
-export function phaseTwoShortcutNote(): string | null {
-  const later = NAV_ITEMS.filter((item) => !item.available);
-  if (later.length === 0) return null;
-  const labels = later.map((item) => item.label);
+/** Sentence for the sheet's footnote: which sections open the team workspace in the browser. */
+export function workspaceShortcutNote(): string | null {
+  const linked = NAV_ITEMS.filter((item) => item.workspace);
+  if (linked.length === 0) return null;
+  const labels = linked.map((item) => item.label);
   const names = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
-  const digits = later.map((item) => item.digit).join(', ');
-  return `${names} (Ctrl+${digits}) arrive${later.length === 1 ? 's' : ''} in Phase 2.`;
+  return `${names} open the team workspace in your browser, when this build links to one.`;
 }

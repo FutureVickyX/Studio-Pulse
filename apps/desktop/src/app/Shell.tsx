@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Route } from '@studio-pulse/shared-types';
+import type { Route, WorkspaceSection } from '@studio-pulse/shared-types';
 import { currentTimeZone } from '@studio-pulse/time-engine';
 import {
-  Badge,
   BrandMark,
   Button,
   Dialog,
   IconClock,
+  IconExternal,
   IconHome,
   IconKeyboard,
   IconNotes,
@@ -22,10 +22,11 @@ import type { ReactNode } from 'react';
 import { ErrorBanner, ErrorBoundary, LiveDuration, StatusLabel } from '../components/common';
 import { PauseControl } from '../components/PauseControl';
 import { useAccount, useSyncStatus } from '../hooks/useCloud';
-import { useNow, useTrackerActions, useTrackerStatus } from '../hooks/useLive';
-import { subscribe } from '../lib/api';
+import { useAppInfo, useNow, useTrackerActions, useTrackerStatus } from '../hooks/useLive';
+import { call, subscribe } from '../lib/api';
+import { toCommandError } from '../lib/errors';
 import { clockTime, count } from '../lib/format';
-import { matchShortcut, phaseTwoShortcutNote, SHORTCUTS } from '../lib/keyboard';
+import { matchShortcut, SHORTCUTS, workspaceShortcutNote } from '../lib/keyboard';
 import { isRoute, NAV_ITEMS, resolveNavigation, sectionOf, settingsTabOf } from '../lib/routes';
 import type { Section } from '../lib/routes';
 import { describeStatus, hasLiveSession, pauseAction } from '../lib/status';
@@ -80,6 +81,18 @@ export function Shell() {
     [navigate],
   );
 
+  // One path for the sidebar entries and Ctrl+2/3/4, so both report a failure the same way
+  // (including "this build doesn't link to a team workspace", which Rust answers).
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const openWorkspace = useCallback(async (target: WorkspaceSection) => {
+    setLinkError(null);
+    try {
+      await call('open_workspace', { section: target });
+    } catch (error) {
+      setLinkError(toCommandError(error).message);
+    }
+  }, []);
+
   const { pause, resume } = pauseActions;
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -91,6 +104,7 @@ export function Shell() {
       if (!action) return;
       event.preventDefault();
       if (action.type === 'navigate') navigate(action.route);
+      else if (action.type === 'openWorkspace') void openWorkspace(action.section);
       else if (action.type === 'showShortcuts') setShortcutsOpen(true);
       else {
         const state = trackerStatusStore.getSnapshot().data?.state;
@@ -102,13 +116,20 @@ export function Shell() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [navigate, pause, resume]);
+  }, [navigate, openWorkspace, pause, resume]);
 
   const settingsTab = settingsTabOf(route);
 
   return (
     <div className="app-shell">
-      <Sidebar route={route} onNavigate={navigate} onShowShortcuts={() => setShortcutsOpen(true)} shortcutError={pauseActions.error?.message ?? null} />
+      <Sidebar
+        route={route}
+        onNavigate={navigate}
+        onOpenWorkspace={(target) => void openWorkspace(target)}
+        linkError={linkError}
+        onShowShortcuts={() => setShortcutsOpen(true)}
+        shortcutError={pauseActions.error?.message ?? null}
+      />
       <main className="app-main" ref={mainRef} tabIndex={-1}>
         <ErrorBoundary key={section} label="This page">
           {section === 'home' ? <HomeView onNavigate={navigate} /> : null}
@@ -128,15 +149,21 @@ export function Shell() {
 function Sidebar({
   route,
   onNavigate,
+  onOpenWorkspace,
+  linkError,
   onShowShortcuts,
   shortcutError,
 }: {
   route: Route;
   onNavigate: (route: Route) => void;
+  onOpenWorkspace: (section: WorkspaceSection) => void;
+  linkError: string | null;
   onShowShortcuts: () => void;
   shortcutError: string | null;
 }) {
   const section = sectionOf(route);
+  const workspaceUrl = useAppInfo().data?.workspaceUrl ?? null;
+
   return (
     <aside className="app-sidebar" aria-label="Studio Pulse">
       <div className="app-brand">
@@ -150,22 +177,35 @@ function Sidebar({
         <ul>
           {NAV_ITEMS.map((item) => {
             const current = item.section === section;
-            if (!item.available) {
+            if (item.workspace) {
+              const target = item.workspace;
               return (
                 <li key={item.section}>
-                  <Tooltip content="Arrives in Phase 2" placement="right">
+                  <Tooltip
+                    content={workspaceUrl ? 'Opens the team workspace in your browser' : 'This build doesn’t link to a team workspace'}
+                    placement="right"
+                  >
                     <button
                       type="button"
                       className="app-nav__item"
-                      aria-disabled="true"
-                      onClick={(event) => event.preventDefault()}
+                      aria-disabled={workspaceUrl ? undefined : 'true'}
+                      onClick={(event) => {
+                        if (!workspaceUrl) {
+                          event.preventDefault();
+                          return;
+                        }
+                        onOpenWorkspace(target);
+                      }}
+                      title={workspaceUrl ? `${item.label} in the team workspace (Ctrl+${item.digit})` : undefined}
                     >
                       <span className="app-nav__icon">{NAV_ICONS[item.section]}</span>
                       <span className="app-nav__label">{item.label}</span>
-                      <Badge tone="subtle" className="app-nav__tag">
-                        Phase 2
-                      </Badge>
-                      <span className="sp-visually-hidden">, arrives in Phase 2</span>
+                      <span className="app-nav__external" aria-hidden="true">
+                        <IconExternal size={12} />
+                      </span>
+                      <span className="sp-visually-hidden">
+                        {workspaceUrl ? ', opens the team workspace in your browser' : ', not linked in this build'}
+                      </span>
                     </button>
                   </Tooltip>
                 </li>
@@ -191,6 +231,11 @@ function Sidebar({
           })}
         </ul>
       </nav>
+      {linkError ? (
+        <p className="app-inline-error" role="alert">
+          {linkError}
+        </p>
+      ) : null}
 
       <div className="app-sidebar__footer">
         <Button size="sm" variant="ghost" icon={<IconKeyboard size={14} />} onClick={onShowShortcuts} className="app-sidebar__shortcuts">
@@ -278,7 +323,7 @@ function TrackingCard({ shortcutError }: { shortcutError: string | null }) {
 // Shortcuts sheet
 // ---------------------------------------------------------------------------------------------
 
-const phaseTwoNote = phaseTwoShortcutNote();
+const workspaceNote = workspaceShortcutNote();
 
 function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
@@ -307,7 +352,7 @@ function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void
           </div>
         ))}
       </dl>
-      {phaseTwoNote ? <p className="app-dialog-text sp-faint">{phaseTwoNote}</p> : null}
+      {workspaceNote ? <p className="app-dialog-text sp-faint">{workspaceNote}</p> : null}
     </Dialog>
   );
 }

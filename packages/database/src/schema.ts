@@ -25,7 +25,7 @@ export const Constants = {
       workspace_role: ['owner', 'admin', 'member'],
       membership_status: ['active', 'removed'],
       time_entry_visibility: ['private', 'admins'],
-      project_status: ['active', 'archived'],
+      project_status: ['planning', 'active', 'on_hold', 'completed', 'archived'],
       task_status: ['inbox', 'todo', 'in_progress', 'in_review', 'done', 'archived'],
       task_priority: ['low', 'normal', 'high', 'urgent'],
       note_visibility: ['private', 'workspace'],
@@ -140,6 +140,10 @@ export const TABLE_COLUMNS = {
     created_by: optDflt('uuid'),
     created_at: dflt('timestamptz'),
     updated_at: dflt('timestamptz'),
+    lead_id: opt('uuid'),
+    start_date: opt('date'),
+    due_date: opt('date'),
+    version: dflt('integer'),
   },
   tasks: {
     id: dflt('uuid'),
@@ -157,6 +161,7 @@ export const TABLE_COLUMNS = {
     completed_at: opt('timestamptz'),
     created_at: dflt('timestamptz'),
     updated_at: dflt('timestamptz'),
+    version: dflt('integer'),
   },
   notes: {
     id: dflt('uuid'),
@@ -170,6 +175,7 @@ export const TABLE_COLUMNS = {
     version: dflt('integer'),
     created_at: dflt('timestamptz'),
     updated_at: dflt('timestamptz'),
+    archived_at: opt('timestamptz'),
   },
   time_entries: {
     id: req('uuid'),
@@ -190,6 +196,27 @@ export const TABLE_COLUMNS = {
     local_revision: dflt('integer'),
     recorded_at: req('timestamptz'),
     created_at: dflt('timestamptz'),
+  },
+  task_subtasks: {
+    id: dflt('uuid'),
+    workspace_id: req('uuid'),
+    task_id: req('uuid'),
+    title: req('text'),
+    done: dflt('boolean'),
+    position: dflt('integer'),
+    created_by: optDflt('uuid'),
+    created_at: dflt('timestamptz'),
+    updated_at: dflt('timestamptz'),
+  },
+  task_comments: {
+    id: dflt('uuid'),
+    workspace_id: req('uuid'),
+    task_id: req('uuid'),
+    author_id: dflt('uuid'),
+    body: req('text'),
+    created_at: dflt('timestamptz'),
+    updated_at: dflt('timestamptz'),
+    edited_at: opt('timestamptz'),
   },
 } as const satisfies Record<string, Record<string, ColumnSpec>>;
 
@@ -232,6 +259,7 @@ export const TABLE_RELATIONSHIPS = {
   ],
   projects: [
     fk('projects_created_by_fkey', ['created_by'], 'users', ['id'], false),
+    fk('projects_lead_id_fkey', ['lead_id'], 'profiles', ['id'], false),
     fk('projects_workspace_id_fkey', ['workspace_id'], 'workspaces', ['id'], false),
   ],
   tasks: [
@@ -250,6 +278,16 @@ export const TABLE_RELATIONSHIPS = {
     fk('time_entries_task_id_workspace_id_fkey', ['task_id', 'workspace_id'], 'tasks', ['id', 'workspace_id'], false),
     fk('time_entries_user_id_fkey', ['user_id'], 'profiles', ['id'], false),
     fk('time_entries_workspace_id_fkey', ['workspace_id'], 'workspaces', ['id'], false),
+  ],
+  task_subtasks: [
+    fk('task_subtasks_created_by_fkey', ['created_by'], 'users', ['id'], false),
+    fk('task_subtasks_task_id_workspace_id_fkey', ['task_id', 'workspace_id'], 'tasks', ['id', 'workspace_id'], false),
+    fk('task_subtasks_workspace_id_fkey', ['workspace_id'], 'workspaces', ['id'], false),
+  ],
+  task_comments: [
+    fk('task_comments_author_id_fkey', ['author_id'], 'profiles', ['id'], false),
+    fk('task_comments_task_id_workspace_id_fkey', ['task_id', 'workspace_id'], 'tasks', ['id', 'workspace_id'], false),
+    fk('task_comments_workspace_id_fkey', ['workspace_id'], 'workspaces', ['id'], false),
   ],
 } as const satisfies Record<TableName, readonly RelationshipSpec[]>;
 
@@ -321,6 +359,12 @@ export const FUNCTIONS = {
     args: { p_workspace_id: req('uuid'), p_user_id: req('uuid'), p_role: req('enum:workspace_role') },
     returns: { kind: 'void' },
     securityDefiner: true,
+  },
+  set_time_entry_attribution: {
+    args: { p_entry_ids: req('uuid[]'), p_project_id: optDflt('uuid'), p_task_id: optDflt('uuid') },
+    returns: { kind: 'scalar', type: 'integer' },
+    // SECURITY INVOKER: RLS limits the update to the caller's own entries.
+    securityDefiner: false,
   },
   set_time_entry_visibility: {
     args: { p_workspace_id: req('uuid'), p_visibility: req('enum:time_entry_visibility') },

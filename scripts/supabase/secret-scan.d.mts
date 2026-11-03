@@ -18,7 +18,9 @@ export interface AllowEntry {
   reason: string;
   /** Repository-relative path (forward slashes) of a source file. */
   path?: string;
-  /** File-name pattern of a build output. */
+  /** Repository-relative directory prefix (forward slashes, trailing slash). */
+  under?: string;
+  /** File-name pattern of a build output (matched anywhere unless `under` is given). */
   binaryName?: RegExp;
 }
 
@@ -38,7 +40,7 @@ export declare function scanBuffer(buf: Buffer, options?: { literals?: readonly 
 export declare function configuredLiterals(values: Readonly<Record<string, string>>): Literal[];
 export declare function allowedBy(file: string, kind: string, allowlist: readonly AllowEntry[]): AllowEntry | undefined;
 export declare function listFiles(path: string): string[];
-export declare function defaultTargets(env?: NodeJS.ProcessEnv): { path: string; label: string }[];
+export declare function defaultTargets(env?: NodeJS.ProcessEnv): { path: string; label: string; required: boolean }[];
 export declare function scanFiles(
   files: readonly string[],
   options?: { literals?: readonly Literal[]; allowlist?: readonly AllowEntry[] },

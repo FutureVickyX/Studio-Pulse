@@ -264,6 +264,11 @@
   font-size: 10px;
 }
 
+.app-nav__external {
+  display: inline-flex;
+  color: var(--sp-text-faint);
+}
+
 .app-nav__kbd {
   font-size: var(--sp-text-xs);
   color: var(--sp-text-faint);

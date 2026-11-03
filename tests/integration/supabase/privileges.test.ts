@@ -20,6 +20,8 @@ const TABLES = [
   'notes',
   'profiles',
   'projects',
+  'task_comments',
+  'task_subtasks',
   'tasks',
   'time_entries',
   'workspace_invitations',
@@ -35,6 +37,8 @@ const TABLE_GRANTS: Record<Table, TablePrivilege[]> = {
   notes: ['DELETE', 'SELECT'],
   profiles: ['SELECT'],
   projects: ['DELETE', 'SELECT'],
+  task_comments: ['DELETE', 'SELECT'],
+  task_subtasks: ['DELETE', 'SELECT'],
   tasks: ['DELETE', 'SELECT'],
   time_entries: ['DELETE', 'SELECT'],
   workspace_invitations: [],
@@ -46,14 +50,24 @@ const TABLE_GRANTS: Record<Table, TablePrivilege[]> = {
 const COLUMN_GRANTS: Record<Table, Partial<Record<ColumnPrivilege, typeof ALL | string[]>>> = {
   notes: {
     SELECT: ALL,
-    INSERT: ['body', 'owner_id', 'pinned', 'project_id', 'title', 'visibility', 'workspace_id'],
-    UPDATE: ['body', 'pinned', 'project_id', 'title', 'visibility'],
+    INSERT: ['body', 'id', 'owner_id', 'pinned', 'project_id', 'title', 'visibility', 'workspace_id'],
+    UPDATE: ['archived_at', 'body', 'pinned', 'project_id', 'title', 'visibility'],
   },
   profiles: { SELECT: ALL, UPDATE: ['display_name'] },
   projects: {
     SELECT: ALL,
-    INSERT: ['created_by', 'description', 'name', 'status', 'workspace_id'],
-    UPDATE: ['description', 'name', 'status'],
+    INSERT: ['created_by', 'description', 'due_date', 'id', 'lead_id', 'name', 'start_date', 'status', 'workspace_id'],
+    UPDATE: ['description', 'due_date', 'lead_id', 'name', 'start_date', 'status'],
+  },
+  task_comments: {
+    SELECT: ALL,
+    INSERT: ['author_id', 'body', 'id', 'task_id', 'workspace_id'],
+    UPDATE: ['body'],
+  },
+  task_subtasks: {
+    SELECT: ALL,
+    INSERT: ['created_by', 'done', 'id', 'position', 'task_id', 'title', 'workspace_id'],
+    UPDATE: ['done', 'position', 'title'],
   },
   tasks: {
     SELECT: ALL,
@@ -63,6 +77,7 @@ const COLUMN_GRANTS: Record<Table, Partial<Record<ColumnPrivilege, typeof ALL | 
       'description',
       'due_date',
       'estimated_minutes',
+      'id',
       'priority',
       'project_id',
       'start_date',
@@ -103,6 +118,8 @@ const COLUMN_GRANTS: Record<Table, Partial<Record<ColumnPrivilege, typeof ALL | 
       'user_id',
       'workspace_id',
     ],
+    // Attribution only (Phase 2B); every measured column stays immutable.
+    UPDATE: ['project_id', 'task_id'],
   },
   workspace_invitations: {
     // Everything except token_hash.
@@ -128,8 +145,10 @@ const POLICY_COMMANDS: Record<Table, string[]> = {
   notes: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   profiles: ['SELECT', 'UPDATE'],
   projects: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
+  task_comments: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
+  task_subtasks: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   tasks: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
-  time_entries: ['DELETE', 'INSERT', 'SELECT'],
+  time_entries: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   workspace_invitations: ['SELECT'],
   workspace_members: ['SELECT'],
   workspaces: ['DELETE', 'SELECT', 'UPDATE'],
@@ -144,6 +163,7 @@ const AUTHENTICATED_FUNCTIONS = [
   'remove_member',
   'revoke_invitation',
   'set_member_role',
+  'set_time_entry_attribution',
   'set_time_entry_visibility',
   'sync_time_entries',
 ].sort();
@@ -153,6 +173,7 @@ const AUTHENTICATED_FUNCTIONS = [
  * expose, so they are not `/rest/v1/rpc/*` endpoints (migration 5/5).
  */
 const PRIVATE_FUNCTIONS = [
+  'can_edit_task',
   'has_workspace_role',
   'is_active_member',
   'is_workspace_member',
@@ -160,13 +181,22 @@ const PRIVATE_FUNCTIONS = [
 ].sort();
 
 const TRIGGER_FUNCTIONS = [
+  'bump_version',
   'handle_new_user',
   'notes_bump_version',
+  'notes_guard_owner_fields',
   'notes_owner_fixed',
   'prevent_workspace_change',
+  'projects_check_lead',
+  'projects_guard_delete',
   'promote_successor_owner',
   'set_updated_at',
+  'task_comments_mark_edited',
+  'tasks_check_assignee',
+  'tasks_guard_delete',
+  'tasks_move_time',
   'tasks_track_completion',
+  'time_entries_attribution',
   'trim_bounded_text',
 ].sort();
 
@@ -177,11 +207,14 @@ const SECURITY_DEFINER_FUNCTIONS = [
   'create_workspace',
   'handle_new_user',
   'my_workspaces',
+  'projects_guard_delete',
   'promote_successor_owner',
   'remove_member',
   'revoke_invitation',
   'set_member_role',
   'set_time_entry_visibility',
+  'tasks_guard_delete',
+  'tasks_move_time',
 ].sort();
 
 /** A role with no grants and no memberships: what PUBLIC (every role) can do. */
@@ -355,12 +388,18 @@ describe('tables', () => {
     expect(await columnPrivileges('authenticated')).toEqual(expected);
   });
 
-  it('time entries are never updatable and invitation token hashes never readable', async () => {
-    const rows = await db().admin<{ update_any: boolean; hash_select: boolean }>(
-      `select has_any_column_privilege('authenticated', 'public.time_entries', 'UPDATE') as update_any,
-              has_column_privilege('authenticated', 'public.workspace_invitations', 'token_hash', 'SELECT') as hash_select`,
+  it('measured time-entry columns are never updatable and invitation token hashes never readable', async () => {
+    const rows = await db().admin<{ column: string; update: boolean }>(
+      `select a.attname::text as column, has_column_privilege('authenticated', 'public.time_entries', a.attname, 'UPDATE') as update
+         from pg_attribute a
+        where a.attrelid = 'public.time_entries'::regclass and a.attnum > 0 and not a.attisdropped
+        order by 1`,
     );
-    expect(rows).toEqual([{ update_any: false, hash_select: false }]);
+    expect(rows.filter((r) => r.update).map((r) => r.column)).toEqual(['project_id', 'task_id']);
+    const [hash] = await db().admin<{ hash_select: boolean }>(
+      `select has_column_privilege('authenticated', 'public.workspace_invitations', 'token_hash', 'SELECT') as hash_select`,
+    );
+    expect(hash).toEqual({ hash_select: false });
   });
 
   it('auth.users is not readable or writable by clients', async () => {

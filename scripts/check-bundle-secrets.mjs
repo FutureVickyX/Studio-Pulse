@@ -2,8 +2,10 @@
 // Scan build outputs and desktop sources for Supabase secrets that must never ship.
 //
 //   npm run check:secrets                      apps/desktop/dist, the release exe, the NSIS
-//                                              installer(s) and apps/desktop/src-tauri/src
+//                                              installer(s), apps/desktop/src-tauri/src and
+//                                              (if built) the workspace bundle apps/web/dist
 //   npm run check:secrets -- <file|dir> ...    scan these instead
+//   npm run check:secrets:web                  only apps/web/dist (no desktop build needed)
 //   options: --env-path <path>   --no-allowlist   --help
 //
 // Exit 0: nothing found. Exit 1: findings, reported as file + kind + line/offset (the matched

@@ -148,6 +148,22 @@ describe('allowlist', () => {
     }
     expect([...REFERENCE_KINDS].sort()).toEqual(['db-url-env-name', 'sb-secret-prefix', 'secret-key-env-name', 'service-role-mention']);
   });
+
+  it('excuses the key-rejection rule in the workspace bundle only, by directory and file name', () => {
+    const webIndex = join(REPO_ROOT, 'apps/web/dist/assets/index-DAF5t7pO.js');
+    expect(allowedBy(webIndex, 'sb-secret-prefix', DEFAULT_ALLOWLIST)).toBeDefined();
+    expect(allowedBy(webIndex, 'service-role-mention', DEFAULT_ALLOWLIST)).toBeDefined();
+    expect(allowedBy(webIndex, 'secret-key-env-name', DEFAULT_ALLOWLIST)).toBeUndefined();
+    // Not the desktop's bundle, not another file of the workspace, not a copy elsewhere.
+    expect(allowedBy(join(REPO_ROOT, 'apps/desktop/dist/assets/index-DAF5t7pO.js'), 'sb-secret-prefix', DEFAULT_ALLOWLIST)).toBeUndefined();
+    expect(allowedBy(join(REPO_ROOT, 'apps/web/dist/assets/vendor.js'), 'sb-secret-prefix', DEFAULT_ALLOWLIST)).toBeUndefined();
+    expect(allowedBy(join(tmpdir(), 'apps/web/dist/assets/index-x.js'), 'sb-secret-prefix', DEFAULT_ALLOWLIST)).toBeUndefined();
+    for (const kind of LEAK_KINDS) {
+      expect(allowedBy(webIndex, kind, DEFAULT_ALLOWLIST), kind).toBeUndefined();
+    }
+    // An entry with no selector excuses nothing.
+    expect(allowedBy(webIndex, 'sb-secret-prefix', [{ kinds: ['sb-secret-prefix'], reason: 'x' }])).toBeUndefined();
+  });
 });
 
 describe('scanFiles and the command line', () => {
@@ -236,10 +252,16 @@ describe('scanFiles and the command line', () => {
     mkdirSync(join(targetDir, 'release', 'bundle', 'nsis'), { recursive: true });
     writeFileSync(join(targetDir, 'release', 'bundle', 'nsis', 'Studio Pulse_0.1.0_x64-setup.exe'), '');
     const targets = defaultTargets({ CARGO_TARGET_DIR: targetDir });
-    expect(targets.map((t) => t.label)).toEqual(['webview bundle', 'release executable', 'NSIS installer', 'desktop Rust sources']);
+    expect(targets.map((t) => t.label)).toEqual([
+      'webview bundle',
+      'release executable',
+      'NSIS installer',
+      'desktop Rust sources',
+      'web workspace bundle',
+    ]);
     expect(targets[1]!.path).toBe(join(targetDir, 'release', 'studio-pulse.exe'));
     expect(targets[2]!.path).toBe(join(targetDir, 'release', 'bundle', 'nsis', 'Studio Pulse_0.1.0_x64-setup.exe'));
-    expect(targets.map((t) => t.required)).toEqual([true, true, false, true]);
+    expect(targets.map((t) => t.required)).toEqual([true, true, false, true, false]);
     // Without CARGO_TARGET_DIR: Cargo's own default next to the crate, whatever LOCALAPPDATA says.
     const fallback = defaultTargets({ LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' });
     expect(fallback[1]!.path).toBe(join(REPO_ROOT, 'apps', 'desktop', 'src-tauri', 'target', 'release', 'studio-pulse.exe'));

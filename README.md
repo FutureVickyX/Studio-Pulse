@@ -9,9 +9,11 @@ foreground, separates **active** time from **idle** time, and shows honest daily
 Nothing is uploaded, nothing is hidden, and nothing beyond the application name and timing is
 collected.
 
-> **Status: Phase 1 (desktop tracking) and Phase 2A (Supabase accounts, workspaces, RLS and
-> desktop sync) on Windows 10/11.** Shared projects, tasks and notes UI is Phase 2B. Quick capture and manual time entries are Phase 3. macOS and
-> Linux are not supported.
+> **Status: Phase 1 (desktop tracking), Phase 2A (Supabase accounts, workspaces, RLS and desktop
+> sync) and Phase 2B (the team workspace: projects, tasks, notes and time attribution, in
+> `apps/web`).** The desktop app runs on Windows 10/11; the workspace runs in any modern browser.
+> Quick capture, manual time entries and billable time are Phase 3. macOS and Linux desktops are
+> not supported.
 
 ## What Phase 1 does
 
@@ -35,6 +37,27 @@ collected.
 - **Privacy controls.** Onboarding consent before anything is recorded, every stored field
   listed, JSON/CSV export, and history deletion. See [docs/privacy.md](docs/privacy.md).
 
+## What Phase 2B adds: the team workspace
+
+A static web app (`apps/web`) on the same Supabase project, with every read and write checked by
+Row Level Security:
+
+- **Projects** with planning / active / on hold / completed / archived states, a lead, start and
+  due dates, their tasks, notes and tracked time. Archive and restore; a project with work
+  attached can't be deleted, so history is never detached.
+- **Tasks** in My tasks, All tasks and per-project views, with filters, assignment to active
+  members only, status, priority, due dates, checklists and comments.
+- **Notes**, personal or shared and optionally tied to a project, with autosave, conflict
+  detection and local drafts that survive a lost connection or a closed tab.
+- **Time attribution.** Your synced desktop sessions can be attributed to a project and
+  optionally a task. Measured values are never changed, nothing is inferred from application
+  names, and foreground and active time are not billable time.
+- **Live updates** between teammates through Supabase Realtime, subject to RLS.
+
+The workspace is online-only; the desktop tracker still works fully offline. The desktop's Tasks,
+Notes and Projects entries open the workspace when the build links to one. See
+[docs/workspace.md](docs/workspace.md).
+
 ## Quick start (development)
 
 Prerequisites: Windows 10/11, Node.js ≥ 22, Rust (stable, MSVC), Visual Studio Build Tools with
@@ -46,6 +69,8 @@ npm install
 npm run dev          # Tauri dev build with hot-reloading UI
 npm test             # TypeScript (vitest) + Rust (cargo test)
 npm run build        # release build + NSIS installer
+npm run dev:web      # team workspace on http://127.0.0.1:5180 (needs apps/web/.env.local)
+npm run build:web    # static workspace build in apps/web/dist
 ```
 
 ## Verification status (Phase 1)
@@ -73,9 +98,10 @@ Verified end-to-end with the real app on this machine:
 - The webviews were refused tray, menu, image and event-emit APIs, and the indicator was refused
   settings changes.
 
-Phase 2A was verified against a real Supabase project (`studio-pulse-dev`): all seven migrations
-applied, all 35 RLS/RPC checks passing as real users through the publishable key, and both Rust
-live tests (the HTTP contract and the full desktop sync pipeline) passing. See
+Phase 2A and 2B were verified against a real Supabase project (`studio-pulse-dev`): all eight
+migrations applied, all 35 RLS/RPC checks passing as real users through the publishable key, the
+workspace's data layer passing its live suite as three real users, and both Rust live tests (the
+HTTP contract and the full desktop sync pipeline) passing. See
 [docs/supabase.md §3](docs/supabase.md#3-verify-against-the-real-project).
 
 Still to do on a real install (see [docs/testing.md](docs/testing.md#3-manual-windows-verification-checklist)):
@@ -86,21 +112,24 @@ run the installer, sign out/in or reboot with launch at login enabled, and check
 | Path | What |
 | --- | --- |
 | `apps/desktop` | Tauri 2 app: React UI (`src/`) and Rust core (`src-tauri/`) |
-| `apps/web` | Phase 2 web dashboard (placeholder) |
+| `apps/web` | Team workspace (Phase 2B): React + Vite static app on Supabase — see [docs/workspace.md](docs/workspace.md) |
 | `packages/shared-types` | Rust⇄UI contract types + built-in application registry JSON |
 | `packages/validation` | zod schemas for settings, applications and inputs |
 | `packages/time-engine` | Reporting maths: ranges, time zones, day splitting, aggregation |
 | `packages/ui` | Design tokens, React primitives, SVG charts |
 | `packages/database` | Typed Supabase client factory, `Database` types matching the migrations, publishable-key-only config validation |
-| `supabase/` | Ordered Postgres migrations with RLS and RPCs (Phase 2A) — see [docs/supabase.md](docs/supabase.md) |
-| `tests/` | TS unit and integration tests, plus shared tracking scenario fixtures |
-| `docs/` | [Architecture](docs/architecture.md), [installation](docs/installation.md), [privacy](docs/privacy.md), [testing](docs/testing.md) |
+| `supabase/` | Ordered Postgres migrations with RLS and RPCs (Phases 2A and 2B) — see [docs/supabase.md](docs/supabase.md) |
+| `tests/` | TS unit and integration tests, live tests against a real project (`tests/live`), and shared tracking scenario fixtures |
+| `docs/` | [Architecture](docs/architecture.md), [installation](docs/installation.md), [privacy](docs/privacy.md), [Supabase](docs/supabase.md), [workspace](docs/workspace.md), [testing](docs/testing.md) |
 
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) covers the process model, accounting rules,
   registry, storage, the command allowlist, startup and the Phase-2 seams.
 - [docs/installation.md](docs/installation.md) covers building, installing and launch-at-login.
+- [docs/supabase.md](docs/supabase.md) covers the Supabase project, migrations, RLS and sync.
+- [docs/workspace.md](docs/workspace.md) covers the team workspace: setup, deployment, security,
+  conflicts, offline behaviour and time attribution.
 - [docs/privacy.md](docs/privacy.md) lists exactly what is and isn't recorded.
 - [docs/testing.md](docs/testing.md) covers automated tests and the manual Windows checklist.
 - [Known limitations](docs/architecture.md#16-known-limitations) lists accuracy bounds and

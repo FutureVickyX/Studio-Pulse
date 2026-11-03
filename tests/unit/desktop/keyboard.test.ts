@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   digitOf,
   matchShortcut,
-  phaseTwoShortcutNote,
   SHORTCUTS,
+  workspaceShortcutNote,
 } from '../../../apps/desktop/src/lib/keyboard';
 import type { KeyContext, KeyInput } from '../../../apps/desktop/src/lib/keyboard';
 import { NAV_ITEMS } from '../../../apps/desktop/src/lib/routes';
@@ -31,8 +31,22 @@ describe('matchShortcut: Ctrl+1…7 sections', () => {
     expect(matchShortcut(ctrlDigit(7), NORMAL)).toEqual({ type: 'navigate', route: 'settings' });
   });
 
-  it.each([2, 3, 4, 6])('ignores Ctrl+%i (a Phase-2 section)', (digit) => {
-    expect(matchShortcut(ctrlDigit(digit), NORMAL)).toBeNull();
+  it.each([
+    [2, 'tasks'],
+    [3, 'notes'],
+    [4, 'projects'],
+  ] as const)('Ctrl+%i opens the team workspace (%s)', (digit, section) => {
+    expect(matchShortcut(ctrlDigit(digit), NORMAL)).toEqual({ type: 'openWorkspace', section });
+  });
+
+  it('ignores auto-repeat of Ctrl+2/3/4, so holding the keys opens the workspace once', () => {
+    for (const digit of [2, 3, 4]) {
+      expect(matchShortcut({ ...ctrlDigit(digit), repeat: true }, NORMAL)).toBeNull();
+    }
+  });
+
+  it('Ctrl+6 goes to Team (Settings › Workspace)', () => {
+    expect(matchShortcut(ctrlDigit(6), NORMAL)).toEqual({ type: 'navigate', route: 'team' });
   });
 
   it.each([0, 8, 9])('ignores Ctrl+%i (no section)', (digit) => {
@@ -41,7 +55,11 @@ describe('matchShortcut: Ctrl+1…7 sections', () => {
 
   it('agrees with NAV_ITEMS for every digit', () => {
     for (const item of NAV_ITEMS) {
-      const expected = item.available ? { type: 'navigate', route: item.section } : null;
+      const expected = item.workspace
+        ? { type: 'openWorkspace', section: item.workspace }
+        : item.available
+          ? { type: 'navigate', route: item.section }
+          : null;
       expect(matchShortcut(ctrlDigit(item.digit), NORMAL)).toEqual(expected);
     }
   });
@@ -169,12 +187,10 @@ describe('digitOf', () => {
 describe('SHORTCUTS sheet', () => {
   const keysOf = (description: string) => SHORTCUTS.filter((s) => s.description === description).map((s) => s.keys.join('+'));
 
-  it('lists one Ctrl+digit row per available section and none for Phase-2 sections', () => {
+  it('lists one Ctrl+digit row per section, marking the team-workspace ones', () => {
     const digitRows = SHORTCUTS.filter((s) => s.keys.length === 2 && s.keys[0] === 'Ctrl' && /^[0-9]$/.test(s.keys[1] ?? ''));
-    expect(digitRows.map((s) => s.keys[1])).toEqual(NAV_ITEMS.filter((i) => i.available).map((i) => String(i.digit)));
-    for (const item of NAV_ITEMS.filter((i) => !i.available)) {
-      expect(SHORTCUTS.some((s) => s.keys.includes(String(item.digit)))).toBe(false);
-    }
+    expect(digitRows.map((s) => s.keys[1])).toEqual(NAV_ITEMS.map((i) => String(i.digit)));
+    expect(digitRows.filter((s) => s.description.endsWith('(team workspace)')).map((s) => s.keys[1])).toEqual(['2', '3', '4']);
   });
 
   it('documents Ctrl+, Ctrl+Shift+P and ?', () => {
@@ -198,7 +214,7 @@ describe('SHORTCUTS sheet', () => {
     }
   });
 
-  it('names the Phase-2 sections and their digits in the footnote', () => {
-    expect(phaseTwoShortcutNote()).toBe('Tasks, Notes, Projects and Team (Ctrl+2, 3, 4, 6) arrive in Phase 2.');
+  it('explains which sections open the team workspace', () => {
+    expect(workspaceShortcutNote()).toBe('Tasks, Notes and Projects open the team workspace in your browser, when this build links to one.');
   });
 });

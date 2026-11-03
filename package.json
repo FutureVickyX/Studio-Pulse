@@ -2,19 +2,22 @@
   "name": "studio-pulse",
   "version": "0.1.0",
   "private": true,
-  "description": "Studio Pulse — a lightweight task manager, notepad and automatic creative-app time tracker for creative teams.",
+  "description": "Studio Pulse \u2014 a lightweight task manager, notepad and automatic creative-app time tracker for creative teams.",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=22"
   },
   "workspaces": [
     "apps/desktop",
+    "apps/web",
     "packages/*"
   ],
   "scripts": {
     "dev": "npm run tauri:dev -w @studio-pulse/desktop",
     "build": "npm run tauri:build -w @studio-pulse/desktop",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:web": "npm run dev -w @studio-pulse/web",
+    "build:web": "npm run build -w @studio-pulse/web",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.json",
     "test": "npm run test:ts && npm run test:rust",
     "test:ts": "vitest run",
     "test:ts:watch": "vitest",
@@ -27,7 +30,8 @@
     "supabase:migrate:dry-run": "node scripts/supabase/migrate.mjs --dry-run",
     "supabase:migrate:status": "node scripts/supabase/migrate.mjs --status",
     "supabase:verify": "node scripts/supabase/verify.mjs",
-    "check:secrets": "node scripts/check-bundle-secrets.mjs"
+    "check:secrets": "node scripts/check-bundle-secrets.mjs",
+    "check:secrets:web": "node scripts/check-bundle-secrets.mjs apps/web/dist"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.10",

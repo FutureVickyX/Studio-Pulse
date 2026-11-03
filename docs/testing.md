@@ -37,7 +37,18 @@ Phase 2A (Supabase accounts, workspaces, RLS and sync):
 | HTTP client against a local fake server | `apps/desktop/src-tauri/tests/cloud_http.rs` | No |
 | The real project: every RLS/RPC check as real users (`verify.mjs`), the HTTP contract and the full desktop pipeline (`supabase_live`, ignored by default) | `scripts/supabase/verify.mjs`, `apps/desktop/src-tauri/tests/supabase_live.rs` | **Yes** (see [docs/supabase.md §3](supabase.md#3-verify-against-the-real-project)) |
 
-Note autosave and concurrent note editing arrive with the Phase 2B UI.
+Phase 2B (team workspace):
+
+| What | Where | Needs network |
+| --- | --- | --- |
+| Project statuses, leads, dates and versions; task versions and deletion guards; checklists; comments; shared-note editing with owner-only fields; time attribution (own entries only, task decides project, archived take no new time, totals count once); former leads and assignees; time following a moved task; workspace deletion still cascading | `tests/integration/supabase/collaboration.test.ts` and the updated `projects`, `tasks`, `notes`, `time-entries`, `privileges` and `anon` suites | No |
+| Workspace pure logic: filters, sorting, due dates, validation, time totals, routes, error mapping, idempotent creates (including a user retry with the same draft id) | `tests/unit/web` | No |
+| Note autosave: debounce, saves on top of the confirmed version, conflicts (nothing is overwritten until you choose), use theirs, retries with a growing delay, no retry after the session ended, deleted or unshared notes, flush on unmount (also during a save), teammates' versions and a save's own realtime echo, local drafts | `tests/unit/web/autosave.test.ts` | No |
+| Desktop links to the workspace: sections, Ctrl+2/3/4, URL validation | `tests/unit/desktop` (routes, keyboard), `src-tauri/src/workspace_link.rs` (unit) | No |
+| The workspace's data layer against the real project as three real users, incl. realtime privacy | `tests/live/workspace.live.test.ts` (opt-in, see [tests/live/README.md](../tests/live/README.md)) | **Yes** |
+
+The signed-in UI itself (clicking through pages in a browser) is a manual check:
+[workspace.md §8](workspace.md#manual-check-of-the-team-workflows).
 
 ## 2. Live Windows tests (real desktop session)
 
@@ -69,10 +80,11 @@ Have the target apps installed. Use `npm run probe` side by side when something 
 | 8 | Idle excluded from active | Set idle timeout to 1 min. Focus Photoshop, don't touch input for 3 min, then move the mouse. | About 1 min before the timeout fires, the active interval is truncated to the last input. An idle interval covers the inactive time and a new active interval starts at the mouse move. Active excludes the 3 min, foreground includes it. |
 | 9 | Sleep creates no false work time | Focus an app, then Start › Power › Sleep. Wake after 5+ min. | The interval ends at sleep time. Nothing is credited for the sleep. A new interval starts after wake/unlock. |
 | 10 | Restart doesn't duplicate sessions | Track for a minute. Reboot with the app open (or kill it in Task Manager). Start again. | The pre-restart interval is closed (`shutdown` or `recovered`), there is no duplicate, and new intervals start after the old one ends. |
-| 11 | Offline events sync after reconnection | _Phase 2._ In Phase 1, disconnect the network and track. | Tracking continues unaffected. Records stay `pending` (Settings › Sync shows the pending count). Upload arrives with Phase 2 sync. |
+| 11 | Offline events sync after reconnection | Signed in with sync configured, disconnect the network and track for a few minutes, then reconnect. | Tracking continues unaffected. Records stay `pending` (Settings › Sync shows the pending count) and upload after reconnecting, without duplicates. |
 | 12 | Paused tracking records no active time | Pause "until I resume". Use Photoshop for 2 min. Resume. | No interval covers the paused span. The tray icon and status show Paused throughout. |
 | 13 | Lock screen | Focus an app, press Win+L for 2 min, unlock | The interval ends at lock. Nothing is recorded while locked. |
 | 14 | Single instance | Launch Studio Pulse a second time | The existing window comes to the front and no second tray icon appears |
 | 15 | Minimize to tray | Close the main window | The window hides and tracking continues (tray state unchanged) |
+| 16 | Workspace links | In a build with `STUDIO_PULSE_WORKSPACE_URL`, click Tasks, then press Ctrl+3 and Ctrl+4 | The default browser opens the workspace on Tasks, Notes and Projects. In a build without it, the entries say the build doesn't link to a workspace and nothing opens. |
 
 Record results (pass/fail, Windows build, app versions) in the release notes for each build.

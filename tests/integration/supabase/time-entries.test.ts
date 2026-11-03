@@ -163,7 +163,7 @@ describe('reading entries', () => {
 });
 
 describe('entries are immutable', () => {
-  it('nobody can UPDATE an entry, not even its owner or a workspace owner who can read it', async () => {
+  it('measured values are immutable for everyone, even the owner or a workspace owner who can read them', async () => {
     const w = await trackedWorld();
     ok(await setVisibility(db(), w.alice, w.wsA, 'admins'));
     const [target] = w.entries.carol;
@@ -172,8 +172,6 @@ describe('entries are immutable', () => {
       `application_name = 'Edited'`,
       `active_ms = 0, idle_ms = 300000, kind = 'idle'`,
       `ended_at = ended_at + interval '1 hour'`,
-      `project_id = null`,
-      `task_id = null`,
       `user_id = '${w.dave.id}'`,
       `workspace_id = '${w.wsB}'`,
       `local_revision = local_revision + 1`,
@@ -187,6 +185,20 @@ describe('entries are immutable', () => {
         );
       }
     }
+    expect(await storedEntries(db(), [target!])).toEqual(before);
+  });
+
+  it('only the owner may write the attribution columns (project_id, task_id) of an entry', async () => {
+    const w = await trackedWorld();
+    ok(await setVisibility(db(), w.alice, w.wsA, 'admins'));
+    const [target] = w.entries.carol;
+    const before = await storedEntries(db(), [target!]);
+    const noOp = `update public.time_entries set project_id = project_id, task_id = task_id where id = $1`;
+    // Others' rows are outside the UPDATE policy, even for an owner who can read them.
+    for (const who of [w.alice, w.bob, w.dave, w.erin, w.mallory]) {
+      expect(ok(await db().affected(who, noOp, [target])), who.label).toBe(0);
+    }
+    expect(ok(await db().affected(w.carol, noOp, [target]))).toBe(1);
     expect(await storedEntries(db(), [target!])).toEqual(before);
   });
 });

@@ -17,6 +17,7 @@ pub mod settings;
 pub mod startup;
 pub mod store;
 pub mod tracker;
+pub mod workspace_link;
 
 mod app_state;
 mod commands;
@@ -375,6 +376,7 @@ pub fn run() {
             commands::export_tracking_events,
             commands::delete_tracking_events,
             commands::get_app_info,
+            commands::open_workspace,
             commands::show_main_window,
             commands::hide_indicator,
             commands::quit_app,

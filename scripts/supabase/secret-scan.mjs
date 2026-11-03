@@ -4,13 +4,15 @@
 //
 //   npm run check:secrets                      scan the default targets (below)
 //   npm run check:secrets -- <file|dir> ...    scan these instead
+//   npm run check:secrets:web                  scan only the workspace bundle (apps/web/dist)
 //   options: --env-path <path>  (default supabase/.env.local)   --no-allowlist   --help
 //
 // Default targets: apps/desktop/dist (the webview bundle), the release executable and the NSIS
 // installer(s) under Cargo's target directory ($CARGO_TARGET_DIR, else Cargo's own default
-// apps/desktop/src-tauri/target), and apps/desktop/src-tauri/src. This is a release gate: a
-// missing webview bundle or release executable is an error (exit 2), never a silent pass. Only a
-// missing installer is reported and skipped. A missing explicit path is an error.
+// apps/desktop/src-tauri/target), apps/desktop/src-tauri/src, and the team workspace bundle
+// apps/web/dist. This is a release gate: a missing desktop webview bundle or release executable is
+// an error (exit 2), never a silent pass. A missing installer or workspace bundle is reported and
+// skipped (build the workspace first to include it). A missing explicit path is an error.
 //
 // Exit 0: nothing found. Exit 1: findings (file + kind + line/offset; the matched text is NEVER
 // printed). Exit 2: usage error or nothing could be scanned.
@@ -30,10 +32,12 @@
 //     secret-key-env-name         "SUPABASE_SECRET_KEY"
 //     db-url-env-name             "SUPABASE_DB_URL"
 //
-// The desktop must recognise secret keys in order to refuse them, so its rejection rule
-// (cloud/config.rs, and its compiled copy in the executable) necessarily contains the bare
-// "sb_secret_" prefix and the "service_role" claim name. DEFAULT_ALLOWLIST permits exactly those
-// two reference kinds there and nowhere else; real key material is still always fatal.
+// The apps must recognise secret keys in order to refuse them, so their rejection rules
+// necessarily contain the bare "sb_secret_" prefix and the "service_role" claim name: the
+// desktop's (cloud/config.rs, build.rs and the compiled executable) and the workspace bundle's
+// copy of @studio-pulse/database's config.ts (apps/web/dist/assets/index-*.js). DEFAULT_ALLOWLIST
+// permits exactly those two reference kinds in those places and nowhere else; real key material
+// is still always fatal.
 //
 // Limits: compressed content cannot be searched. The NSIS installer's payload and the frontend
 // assets Tauri embeds in the executable are compressed, which is why dist/ and the release
@@ -66,9 +70,11 @@ export const REFERENCE_KINDS = Object.freeze([
 ]);
 
 /**
- * @typedef {{ kinds: readonly string[], reason: string, path?: string, binaryName?: RegExp }} AllowEntry
+ * @typedef {{ kinds: readonly string[], reason: string, path?: string, under?: string, binaryName?: RegExp }} AllowEntry
  *   `path`: repository-relative path (forward slashes) of a source file;
- *   `binaryName`: file-name pattern of a build output (matched anywhere).
+ *   `under`: repository-relative directory prefix (forward slashes, trailing slash);
+ *   `binaryName`: file-name pattern of a build output (matched anywhere unless `under` is given).
+ * Every selector given must match.
  */
 
 /** @type {readonly AllowEntry[]} */
@@ -87,6 +93,12 @@ export const DEFAULT_ALLOWLIST = Object.freeze([
     binaryName: /^(studio-pulse\.exe|studio_pulse.*\.(dll|rlib)|.*-setup\.exe)$/i,
     kinds: ['sb-secret-prefix', 'service-role-mention'],
     reason: 'the compiled copy of the rejection rule (cloud/config.rs)',
+  },
+  {
+    under: 'apps/web/dist/assets/',
+    binaryName: /^index-[A-Za-z0-9_-]+\.js$/,
+    kinds: ['sb-secret-prefix', 'service-role-mention'],
+    reason: "the workspace bundle's copy of the key-rejection rule (@studio-pulse/database config.ts)",
   },
 ]);
 
@@ -217,11 +229,14 @@ export function allowedBy(file, kind, allowlist) {
   if (LEAK_KINDS.includes(kind)) return undefined;
   const rel = relative(REPO_ROOT, file).replaceAll('\\', '/');
   const name = basename(file);
-  return allowlist.find(
-    (entry) =>
-      entry.kinds.includes(kind) &&
-      ((entry.path !== undefined && entry.path === rel) || (entry.binaryName !== undefined && entry.binaryName.test(name))),
-  );
+  return allowlist.find((entry) => {
+    if (!entry.kinds.includes(kind)) return false;
+    if (entry.path === undefined && entry.under === undefined && entry.binaryName === undefined) return false;
+    if (entry.path !== undefined && entry.path !== rel) return false;
+    if (entry.under !== undefined && !rel.startsWith(entry.under)) return false;
+    if (entry.binaryName !== undefined && !entry.binaryName.test(name)) return false;
+    return true;
+  });
 }
 
 /**
@@ -261,7 +276,7 @@ export function listFiles(path) {
 /**
  * The default scan targets: `[path, description]`.
  * @param {NodeJS.ProcessEnv} env
- * @returns {{ path: string, label: string }[]}
+ * @returns {{ path: string, label: string, required: boolean }[]}
  */
 export function defaultTargets(env = process.env) {
   // Where Cargo writes: $CARGO_TARGET_DIR, else its default next to the crate (the repository has
@@ -284,6 +299,8 @@ export function defaultTargets(env = process.env) {
     targets.push({ path: join(nsis, '*-setup.exe'), label: 'NSIS installer', required: false });
   }
   targets.push({ path: join(REPO_ROOT, 'apps', 'desktop', 'src-tauri', 'src'), label: 'desktop Rust sources', required: true });
+  // The team workspace (apps/web) is built and deployed separately: scanned when it was built.
+  targets.push({ path: join(REPO_ROOT, 'apps', 'web', 'dist'), label: 'web workspace bundle', required: false });
   return targets;
 }
 
@@ -330,8 +347,8 @@ export function scanFiles(files, { literals = [], allowlist = DEFAULT_ALLOWLIST 
 
 const USAGE = `Usage: node scripts/check-bundle-secrets.mjs [options] [file|dir ...]
 
-  (no paths)          scan apps/desktop/dist, the release exe, the NSIS installer(s) and
-                      apps/desktop/src-tauri/src
+  (no paths)          scan apps/desktop/dist, the release exe, the NSIS installer(s),
+                      apps/desktop/src-tauri/src and (if built) apps/web/dist
   --env-path <path>   where to read SUPABASE_SECRET_KEY / SUPABASE_DB_URL values to look for
                       (default: supabase/.env.local; values are never printed)
   --no-allowlist      also fail on the reference kinds the default allowlist permits`;

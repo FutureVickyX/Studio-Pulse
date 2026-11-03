@@ -515,6 +515,8 @@ pub struct AppInfo {
     pub platform: String,
     pub data_directory: String,
     pub launched_at_login: bool,
+    /// The team workspace (apps/web) this build links to, if configured (a public URL).
+    pub workspace_url: Option<String>,
 }
 
 #[tauri::command]
@@ -526,7 +528,22 @@ pub fn get_app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
         platform: std::env::consts::OS.to_string(),
         data_directory: state.data_dir.to_string_lossy().into_owned(),
         launched_at_login: state.launched_at_login,
+        workspace_url: crate::workspace_link::configured_base(),
     }
+}
+
+/// Open the team workspace in the default browser at `section`. The URL comes from the build, never
+/// from the webview (docs/workspace.md).
+#[tauri::command]
+pub fn open_workspace(section: crate::workspace_link::WorkspaceSection) -> CommandResult<()> {
+    let base = crate::workspace_link::configured_base().ok_or_else(|| {
+        CommandError::new(
+            ErrorCode::NotConfigured,
+            "This build doesn't link to a team workspace.",
+        )
+    })?;
+    let url = crate::workspace_link::link(&base, section);
+    crate::workspace_link::open_in_browser(&url).map_err(CommandError::internal)
 }
 
 #[tauri::command]

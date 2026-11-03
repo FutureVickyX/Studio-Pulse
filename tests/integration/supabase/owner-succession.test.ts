@@ -50,7 +50,7 @@ async function owners(ws: string): Promise<string[]> {
 describe('deleting the last owner’s account', () => {
   it('makes the longest-standing admin the owner, who can then manage the workspace', async () => {
     const [owner, admin1, admin2, member] = await Promise.all(
-      ['owner', 'admin1', 'admin2', 'member'].map((n) => newUser(db(), n)),
+      [newUser(db(), 'owner'), newUser(db(), 'admin1'), newUser(db(), 'admin2'), newUser(db(), 'member')],
     );
     const ws = await workspaceWith(owner, [
       [member, 'member'],
@@ -70,7 +70,7 @@ describe('deleting the last owner’s account', () => {
   });
 
   it('makes the longest-standing member the owner when there is no admin', async () => {
-    const [owner, first, second] = await Promise.all(['owner', 'first', 'second'].map((n) => newUser(db(), n)));
+    const [owner, first, second] = await Promise.all([newUser(db(), 'owner'), newUser(db(), 'first'), newUser(db(), 'second')]);
     const ws = await workspaceWith(owner, [
       [first, 'member'],
       [second, 'member'],
@@ -83,9 +83,7 @@ describe('deleting the last owner’s account', () => {
   });
 
   it('never promotes a removed member', async () => {
-    const [owner, formerAdmin, member] = await Promise.all(
-      ['owner', 'former', 'member'].map((n) => newUser(db(), n)),
-    );
+    const [owner, formerAdmin, member] = await Promise.all([newUser(db(), 'owner'), newUser(db(), 'former'), newUser(db(), 'member')]);
     const ws = await workspaceWith(owner, [
       [formerAdmin, 'admin'],
       [member, 'member'],
@@ -99,7 +97,7 @@ describe('deleting the last owner’s account', () => {
   });
 
   it('promotes nobody while another active owner remains', async () => {
-    const [owner1, owner2, admin] = await Promise.all(['owner1', 'owner2', 'admin'].map((n) => newUser(db(), n)));
+    const [owner1, owner2, admin] = await Promise.all([newUser(db(), 'owner1'), newUser(db(), 'owner2'), newUser(db(), 'admin')]);
     const ws = await workspaceWith(owner1, [
       [admin, 'admin'],
       [owner2, 'member'],
@@ -113,7 +111,7 @@ describe('deleting the last owner’s account', () => {
   });
 
   it('leaves a workspace with no active members as it was, keeping removed members’ entries', async () => {
-    const [owner, leaver] = await Promise.all(['owner', 'leaver'].map((n) => newUser(db(), n)));
+    const [owner, leaver] = await Promise.all([newUser(db(), 'owner'), newUser(db(), 'leaver')]);
     const ws = await workspaceWith(owner, [[leaver, 'member']]);
     const kept = entry();
     await syncOk(db(), leaver, ws, [kept]);
@@ -130,7 +128,7 @@ describe('deleting the last owner’s account', () => {
 
 describe('deleting a workspace', () => {
   it('cascades to its members without promoting anyone or failing', async () => {
-    const [owner, admin] = await Promise.all(['owner', 'admin'].map((n) => newUser(db(), n)));
+    const [owner, admin] = await Promise.all([newUser(db(), 'owner'), newUser(db(), 'admin')]);
     const ws = await workspaceWith(owner, [[admin, 'admin']]);
 
     const deleted = ok(

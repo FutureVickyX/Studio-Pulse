@@ -1,7 +1,8 @@
 # Studio Pulse — Installation and build
 
-Studio Pulse Phase 1 targets **Windows 10 (1809+) and Windows 11, x64**. Other platforms are not
-supported.
+The Studio Pulse desktop app targets **Windows 10 (1809+) and Windows 11, x64**. Other platforms
+are not supported. The team workspace (`apps/web`, Phase 2B) is a static web app that runs in any
+modern browser; building and hosting it is covered in [workspace.md](workspace.md).
 
 ## 1. Install a released build
 
@@ -105,6 +106,32 @@ Sync needs a Supabase project. Set `STUDIO_PULSE_SUPABASE_URL` and
 `STUDIO_PULSE_SUPABASE_PUBLISHABLE_KEY` before `npm run build`. Without them the app tracks
 locally and Settings › Sync explains that sync isn't configured. Setup, migrations and
 verification are in [supabase.md](supabase.md).
+
+### Linking to the team workspace (Phase 2B)
+
+Set `STUDIO_PULSE_WORKSPACE_URL` to the deployed workspace's address before `npm run build`:
+
+```powershell
+$env:STUDIO_PULSE_WORKSPACE_URL = "https://workspace.example.com"
+```
+
+It must be `https://`, or `http://` on `localhost` / `127.0.0.1` for development. Tasks, Notes
+and Projects (Ctrl+2, 3, 4) then open that workspace in the default browser. Without it, those
+entries explain that the build doesn't link to a workspace. Debug builds also read the variable
+at runtime.
+
+### Building the team workspace
+
+```bash
+npm run build:web
+```
+
+This writes a static site to `apps/web/dist` from the public values in `apps/web/.env.local` (or
+`.env.production.local`, or `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` in the
+environment). The build refuses a secret or service-role key. Run `npm run check:secrets:web`
+afterwards to scan the workspace bundle on its own (`npm run check:secrets` includes it too, but
+also needs the desktop release build). Hosting and Supabase Auth settings are in
+[workspace.md §3](workspace.md#3-build-and-deploy).
 
 ## 4. Where things live
 

@@ -1,8 +1,10 @@
 # Studio Pulse — Architecture
 
-> Status: **Phase 1 (desktop tracking MVP)**. Phases 2 (shared workspace) and 3 (productivity
-> workflows) are designed for here but not built. Anything marked _Phase 2_ / _Phase 3_ is a seam,
-> not a feature.
+> Status: **Phase 1 (desktop tracking), Phase 2A (Supabase accounts and sync) and Phase 2B (the
+> team workspace in `apps/web`) are built.** Phase 3 (productivity workflows) is designed for here
+> but not built. Anything marked _Phase 3_ is a seam, not a feature. This document is mostly
+> about the desktop app; the backend is in [supabase.md](supabase.md) and the workspace in
+> [workspace.md](workspace.md).
 
 Studio Pulse is a Windows desktop companion for creative teams. It records which creative
 application is in the foreground, separates active time from idle time, and shows honest totals.
@@ -20,15 +22,16 @@ information without turning the app into employee surveillance._
 | Tauri 2 desktop app (Windows 10/11) | Accounts, Supabase, sync (Phase 2) |
 | Real foreground-app detection (Win32) | Tasks, notes, projects, team (Phase 2) |
 | Idle, lock-screen, sleep and clock-change handling | Quick capture, global shortcut (Phase 3) |
-| Configurable application registry | Manual time entries, attribution (Phase 3) |
+| Configurable application registry | Manual time entries (Phase 3); attribution to projects and tasks (Phase 2B) |
 | Local SQLite persistence and crash recovery | Web dashboard (`apps/web`, Phase 2) |
 | Launch at login (verified), tray, single instance | macOS / Linux (not claimed) |
 | Daily and range dashboards from stored records | |
 | Pause / resume / pause-for-duration | |
 | Local export and deletion of tracking history | |
 
-Phase-2 surfaces in the UI (Tasks, Notes, Projects, Team, workspace settings) are shown as
-disabled navigation entries labelled “Phase 2”. No page shows fabricated data.
+In Phase 1, the Phase-2 surfaces (Tasks, Notes, Projects, Team) were disabled navigation
+entries. Since Phase 2B, Tasks, Notes and Projects open the team workspace in the browser (§7,
+`open_workspace`) and Team opens Settings › Workspace. No page shows fabricated data.
 
 ---
 
@@ -47,17 +50,18 @@ studio-pulse/
 │   │   │   ├── tests/           Rust integration tests
 │   │   │   └── examples/probe.rs  CLI probe for manual Windows verification
 │   │   └── package.json
-│   └── web/                     Phase 2 placeholder (README only)
+│   └── web/                     Team workspace (Phase 2B): React + Vite static app on Supabase
 ├── packages/
 │   ├── shared-types/            TS mirror of every Rust⇄UI payload + default app registry JSON
 │   ├── validation/              zod schemas for settings, app definitions, command inputs
 │   ├── time-engine/             TS reporting maths: ranges, time zones, day-splitting, aggregation
-│   ├── database/                Phase 2 placeholder (Supabase client + generated types)
+│   ├── database/                Typed Supabase client factory, Database types, key validation
 │   └── ui/                      design tokens + React primitives + SVG charts
-├── supabase/                    Phase 2 placeholder (migrations, functions, seed.sql)
+├── supabase/migrations/         Postgres schema, RLS policies and RPCs (Phases 2A and 2B)
 ├── tests/
 │   ├── unit/                    vitest suites for the TS packages
-│   ├── integration/             vitest suites that cross package boundaries
+│   ├── integration/             vitest suites that cross package boundaries, incl. RLS on PGlite
+│   ├── live/                    opt-in suites against a real Supabase project
 │   └── fixtures/tracking/       JSON scenario traces replayed by the Rust engine tests
 └── docs/                        architecture, installation, privacy, testing
 ```
@@ -307,6 +311,25 @@ icon, emit fake tracker events, or read image files by path.
 | `show_main_window` | `{ route: string \| null }` | `void` | ✓ | ✓ |
 | `hide_indicator` | – | `void` | | ✓ |
 | `quit_app` | – | `void` | ✓ | ✓ |
+| `get_account_status` | – | `AccountStatus` | ✓ | |
+| `sign_in` | `{ input: SignInInput }` | `AccountStatus` | ✓ | |
+| `sign_up` | `{ input: SignUpInput }` | `SignUpResult` | ✓ | |
+| `sign_out` | – | `AccountStatus` | ✓ | |
+| `refresh_workspaces` | – | `AccountStatus` | ✓ | |
+| `create_workspace` | `{ name: string }` | `AccountStatus` | ✓ | |
+| `select_sync_workspace` | `{ workspaceId: string \| null }` | `AccountStatus` | ✓ | |
+| `accept_invitation` | `{ token: string }` | `AccountStatus` | ✓ | |
+| `create_invitation` | `{ workspaceId, email, role }` | `InvitationCreated` | ✓ | |
+| `get_sync_status` | – | `SyncOverview` | ✓ | |
+| `sync_now` | – | `SyncOverview` | ✓ | |
+| `claim_local_history` | – | `SyncOverview` | ✓ | |
+| `open_workspace` | `{ section: WorkspaceSection }` | `void` | ✓ | |
+
+The account and sync commands are Phase 2A ([supabase.md](supabase.md)); passwords pass through
+`sign_in` / `sign_up` to Rust and never come back. `open_workspace` (Phase 2B) opens
+`<workspace URL>/#/<section>` in the default browser with `ShellExecuteW`. The URL is compiled in
+from `STUDIO_PULSE_WORKSPACE_URL` and validated (https, or http on localhost). The webview only
+picks one of five fixed sections, never the address.
 
 Errors serialize as `{ code, message }` with `code ∈ validation | not_found | startup_registration |
 storage | platform | internal`. Messages never contain file contents or window titles.
@@ -414,9 +437,10 @@ field, row counts, the database location, export (JSON/CSV) and deletion. See `d
   dashboard.
 - `@studio-pulse/ui` holds design tokens (CSS variables, dark first) and primitives. Fonts are
   Windows system faces (Segoe UI Variable, Cascadia Mono), so nothing is fetched at runtime.
-- Navigation: Home, Tasks*, Notes*, Projects*, Time, Team*, Settings (*Phase 2, disabled).
-  Keyboard: `Ctrl+1…7` switches sections, `Ctrl+,` opens Settings, `Ctrl+Shift+P` pauses or
-  resumes.
+- Navigation: Home, Tasks†, Notes†, Projects†, Time, Team, Settings. †Opens the team workspace
+  in the browser when the build links to one (otherwise shown disabled with an explanation). Team
+  opens Settings › Workspace. Keyboard: `Ctrl+1…7` goes to each section (Ctrl+2, 3, 4 open the
+  workspace), `Ctrl+,` opens Settings, `Ctrl+Shift+P` pauses or resumes.
 
 ---
 
@@ -434,7 +458,7 @@ field, row counts, the database location, export (JSON/CSV) and deletion. See `d
 
 ---
 
-## 14. Phase 2A: Supabase sync (built) and Phase 2B seams
+## 14. Phase 2A: Supabase sync, and Phase 2B: the team workspace (both built)
 
 Phase 2A is built; the full operator guide is [docs/supabase.md](supabase.md).
 
@@ -455,8 +479,18 @@ Phase 2A is built; the full operator guide is [docs/supabase.md](supabase.md).
   uploaded only after an explicit claim. Session expiry never deletes local rows.
 - **Visibility**. Time entries are private to their owner. A workspace owner can let
   owners/admins read members' entries (`time_entry_visibility = 'admins'`).
-- **Phase 2B seams**. Projects, tasks and notes tables and policies exist, with note
-  `version`-based conflict detection, but there is no UI yet.
+- **Phase 2B: team workspace** (`apps/web`, [docs/workspace.md](workspace.md)). A static
+  React + Vite app on the same project, publishable key only, RLS for every read and write. It
+  covers projects (statuses, lead, dates, archive), tasks (views, filters, checklists, comments),
+  personal and shared notes with autosave, and attribution of synced time to projects and tasks.
+  One additive migration adds `version` checks on projects, tasks and notes, client-supplied ids
+  for idempotent creates, deletion guards that keep history, and an attribution path that can
+  only write `project_id` / `task_id` on the caller's own entries. Realtime `postgres_changes`
+  (RLS-filtered) triggers refetches. The workspace is online-only, except that note text is
+  kept as a local draft until saved. The desktop links to it through `open_workspace`.
+- **Not changed by Phase 2B**: the tracker, idle detection, local storage, sync and every Phase 1
+  and 2A command. Measured values (start, end, application, active and idle) stay immutable
+  remotely.
 
 ---
 
@@ -490,5 +524,6 @@ where one is possible.
 | Clock moved backwards | Recording holds (`clockBehind`) until the wall clock passes the latest recorded instant, so the same instant is never counted twice. | Large manual clock changes are rare; NTP corrections are seconds. |
 | UWP apps starting or suspended | `ApplicationFrameHost.exe` without a hosted child is reported as itself and matches nothing. | None of the target creative apps are UWP. |
 | Browser-based Figma | Not detected (the browser is the foreground process). | Opt-in browser detection is a later-phase item. |
-| Automatic measurements | Foreground and active time are not billable time and are not attributed to projects automatically. | Attribution arrives with Phase 3, always as a user action. |
+| Automatic measurements | Foreground and active time are not billable time and are never attributed to projects automatically. | Attribution to a project or task is a user action in the team workspace (Phase 2B). Billable time and manual entries are Phase 3. |
+| Team workspace is online-only | Projects, tasks, checklists and comments can't be created or edited offline; nothing is queued. | Creates are idempotent, so retrying after reconnecting never duplicates. Note text is kept as a local draft and retried. The desktop tracker is unaffected. |
 
