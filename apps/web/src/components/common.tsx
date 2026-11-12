@@ -32,11 +32,25 @@ import { notifyProblem, notifySuccess } from './notices';
 // Page scaffolding and states
 // ---------------------------------------------------------------------------------------------
 
-export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
+/**
+ * The page's heading row. Titles are small uppercase labels; `titleCase="content"` keeps the case of
+ * a title that is user content (a project's name, a greeting with the user's name).
+ */
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+  titleCase = 'label',
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+  titleCase?: 'label' | 'content';
+}) {
   return (
     <header className="web-page__header">
       <div className="web-page__titles">
-        <h1 className="web-page__title">{title}</h1>
+        <h1 className={cx('web-page__title', titleCase === 'content' && 'web-page__title--content')}>{title}</h1>
         {subtitle ? <p className="web-page__subtitle">{subtitle}</p> : null}
       </div>
       {actions ? <div className="web-page__actions">{actions}</div> : null}

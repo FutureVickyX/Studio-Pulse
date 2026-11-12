@@ -69,6 +69,7 @@ export function Shell({ membersProblem, onRetryMembers }: { membersProblem: Prob
     <div className="web-shell" data-menu={menuOpen ? 'open' : 'closed'}>
       <header className="web-topbar">
         <IconButton label={menuOpen ? 'Close menu' : 'Open menu'} icon={menuOpen ? <IconClose size={16} /> : <IconMore size={16} />} onClick={() => setMenuOpen((v) => !v)} />
+        <BrandMark size={18} />
         <span className="web-topbar__title">{workspace.name}</span>
       </header>
       <Sidebar section={section} />
@@ -165,7 +166,7 @@ function Sidebar({ section }: { section: Section }) {
               },
             ]}
             trigger={(props) => (
-              <Button {...props} size="sm" variant="ghost" aria-label="Account menu" icon={<IconMore size={14} />}>
+              <Button {...props} size="sm" variant="ghost" className="sp-btn--icon web-me__menu" aria-label="Account menu" icon={<IconMore size={14} />}>
                 <span className="sp-visually-hidden">Account</span>
               </Button>
             )}

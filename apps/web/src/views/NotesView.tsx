@@ -87,6 +87,7 @@ export function NotesView({ noteId }: { noteId: string | null }) {
               <Select
                 aria-label="Project"
                 selectSize="sm"
+                className={projectId !== ANY ? 'web-filter--active' : undefined}
                 value={projectId}
                 onChange={setProjectId}
                 options={[

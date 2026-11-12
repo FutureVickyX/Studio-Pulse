@@ -131,6 +131,7 @@ export function TimeView() {
           <Select
             aria-label="Application"
             selectSize="sm"
+            className={applicationId !== ANY ? 'web-filter--active' : undefined}
             value={applicationId}
             onChange={setApplicationId}
             options={[{ value: ANY, label: 'All applications' }, ...applicationsIn(entries).map((a) => ({ value: a.id, label: a.name }))]}
@@ -138,6 +139,7 @@ export function TimeView() {
           <Select
             aria-label="Attribution"
             selectSize="sm"
+            className={attribution !== ANY ? 'web-filter--active' : undefined}
             value={attribution}
             onChange={setAttribution}
             options={[

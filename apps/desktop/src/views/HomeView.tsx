@@ -56,7 +56,7 @@ export function HomeView({ onNavigate }: { onNavigate: (route: Route) => void })
 
       {report.loading ? (
         <Card title="Timeline">
-          <Skeleton height={30} radius={6} />
+          <Skeleton height={30} />
         </Card>
       ) : summary ? (
         empty ? (
@@ -158,7 +158,7 @@ function StatusHeroBody({ status }: { status: TrackerStatus }) {
   return (
     <section className="app-hero" data-state={status.state} aria-label="Tracker status">
       <div className="app-hero__main">
-        <StatusLabel presentation={presentation} className="app-status-label app-status-label--hero" />
+        <StatusLabel presentation={presentation} className="app-status-label" />
         <p className="app-hero__headline sp-truncate">{presentation.headline}</p>
         <p className="app-hero__explanation">{presentation.explanation}</p>
       </div>

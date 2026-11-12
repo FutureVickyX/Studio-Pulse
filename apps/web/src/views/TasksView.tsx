@@ -14,6 +14,8 @@ import { useProjects, useTasks, useWorkspace } from '../app/workspace';
 type StatusChoice = 'open' | 'any' | TaskStatus;
 const ANY = '*';
 const NONE = 'none';
+/** A filter that is narrowing the list shows the selected state. */
+const FILTER_ACTIVE = 'web-filter--active';
 
 export function TasksView({ view }: { view: 'mine' | 'all' }) {
   const { user, members, nav } = useWorkspace();
@@ -72,6 +74,7 @@ export function TasksView({ view }: { view: 'mine' | 'all' }) {
         <Select<StatusChoice>
           aria-label="Status"
           selectSize="sm"
+          className={status !== 'open' ? FILTER_ACTIVE : undefined}
           value={status}
           onChange={setStatus}
           options={[
@@ -83,6 +86,7 @@ export function TasksView({ view }: { view: 'mine' | 'all' }) {
         <Select
           aria-label="Project"
           selectSize="sm"
+          className={projectId !== ANY ? FILTER_ACTIVE : undefined}
           value={projectId}
           onChange={setProjectId}
           options={[
@@ -95,6 +99,7 @@ export function TasksView({ view }: { view: 'mine' | 'all' }) {
           <Select
             aria-label="Assignee"
             selectSize="sm"
+            className={assignee !== ANY ? FILTER_ACTIVE : undefined}
             value={assignee}
             onChange={setAssignee}
             options={[
@@ -107,6 +112,7 @@ export function TasksView({ view }: { view: 'mine' | 'all' }) {
         <Select
           aria-label="Priority"
           selectSize="sm"
+          className={priority !== ANY ? FILTER_ACTIVE : undefined}
           value={priority}
           onChange={setPriority}
           options={[{ value: ANY, label: 'Any priority' }, ...TASK_PRIORITIES.map((p) => ({ value: p, label: TASK_PRIORITY_LABEL[p] }))]}

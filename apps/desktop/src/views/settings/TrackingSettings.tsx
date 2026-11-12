@@ -114,7 +114,7 @@ function PauseRow() {
     <SettingRow
       title="Pause or resume"
       description={presentation ? `${presentation.headline}. ${presentation.explanation}` : 'Loading tracker status…'}
-      badge={presentation ? <StatusLabel presentation={presentation} className="app-status-label app-status-label--inline" /> : null}
+      badge={presentation ? <StatusLabel presentation={presentation} className="app-status-label" /> : null}
       control={() => <PauseControl state={status?.state} placement="bottom-end" />}
     />
   );

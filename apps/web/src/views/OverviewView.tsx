@@ -58,6 +58,7 @@ export function OverviewView() {
   return (
     <div className="web-page">
       <PageHeader
+        titleCase="content"
         title={`${greeting(new Date())}, ${firstName}`}
         subtitle={`${workspace.name} · ${formatDay(today)}`}
         actions={
@@ -74,7 +75,7 @@ export function OverviewView() {
       {projects.problem ? <ProblemBanner problem={projects.problem} onRetry={() => void projects.reload()} /> : null}
 
       {empty ? (
-        <Card>
+        <Card className="web-welcome">
           <EmptyState
             icon={<IconProjects size={22} />}
             title="Your workspace is ready"

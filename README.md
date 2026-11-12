@@ -132,5 +132,6 @@ run the installer, sign out/in or reboot with launch at login enabled, and check
   conflicts, offline behaviour and time attribution.
 - [docs/privacy.md](docs/privacy.md) lists exactly what is and isn't recorded.
 - [docs/testing.md](docs/testing.md) covers automated tests and the manual Windows checklist.
+- [docs/ui-restyle.md](docs/ui-restyle.md) records the Figma restyle, review fixes and Windows/browser verification.
 - [Known limitations](docs/architecture.md#16-known-limitations) lists accuracy bounds and
   deliberate trade-offs.

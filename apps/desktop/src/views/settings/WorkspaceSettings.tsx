@@ -52,7 +52,7 @@ export function WorkspaceSettings({ onNavigate }: { onNavigate: (route: Route) =
   const visibility = describeVisibility(workspace.timeEntryVisibility);
   return (
     <>
-      <Card title={workspace.name} description="Your sync workspace. Closed intervals from this device upload here.">
+      <Card title={<span className="sp-keep-case">{workspace.name}</span>} description="Your sync workspace. Closed intervals from this device upload here.">
         <dl className="app-facts">
           <div>
             <dt>Your role</dt>

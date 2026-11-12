@@ -144,7 +144,7 @@ export function TimeView() {
 
           {report.loading ? (
             <Card>
-              <Skeleton height={140} radius={8} />
+              <Skeleton height={140} />
             </Card>
           ) : summary && range ? (
             empty ? (

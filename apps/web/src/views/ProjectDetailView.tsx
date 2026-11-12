@@ -136,6 +136,7 @@ function ProjectDetail({ project }: { project: Project }) {
         <IconChevronLeft size={14} /> Projects
       </button>
       <PageHeader
+        titleCase="content"
         title={
           <span className="web-title-with-badge">
             {project.name}

@@ -1,6 +1,17 @@
 /*
- * Studio Pulse desktop: layout and view styles. Tokens come from @studio-pulse/ui (dark first,
- * `[data-theme='light']` on <html>). Minimum main window: 880 x 560.
+ * Studio Pulse desktop: layout and view styles on the @studio-pulse/ui tokens. One colour palette
+ * (Figma "Studiopulse"): plum surfaces, cream ink, an orange accent and a maroon selected state.
+ * There is no light theme. Minimum main window: 880 x 560.
+ *
+ * Shape: flat rectangles on --sp-surface-1 separated by space or hairlines; 4 px corners on
+ * controls, tabs and chips. Type: UI labels (nav, tabs, table heads, titles, eyebrows, badges,
+ * status) are 12 px uppercase; prose, names and data stay sentence case at 13 px.
+ *
+ * Contrast (WCAG 2.1, checked on the surface each pair sits on): muted #b1a1a4 on the sidebar
+ * #160619 7.9:1; cream on the selected maroon #5f0726 12.0:1; faint #a39399 on the sidebar 6.7:1,
+ * on --sp-surface-1 6.4:1, on a hovered dialog row (5 % cream over #26102b) 5.4:1, the lowest
+ * pair here; orange text #ec8a58 on --sp-surface-1 7.4:1; the nav shortcut hint (80 % cream on
+ * maroon, blended #dcc1c0) 8.0:1.
  *
  * Note: no transform / filter / contain / container-type on layout containers. Menus, tooltips
  * and chart readouts are position: fixed inside the tree (they must also work inside modal
@@ -9,53 +20,100 @@
 
 :root {
   --app-sidebar-w: 212px;
-  --app-sidebar-bg: #0e0e13;
+  /* One step darker than the cards (Figma sidebar); the same value as the web's --web-sidebar-bg. */
+  --app-sidebar-bg: #160619;
   --app-page-max: 1120px;
 }
 
-:root[data-theme='light'] {
-  --app-sidebar-bg: #ececf0;
+/* Small uppercase UI labels, as the reference's tabs and buttons. Sizes are set per element. */
+.app-brand__name,
+.app-status-label,
+.app-nav__item,
+.app-nav__kbd,
+.app-page__title,
+.app-page__note,
+.app-hero__timer-label,
+.app-kind,
+.app-table thead th,
+.app-table__tag,
+.app-custom-range label,
+.app-tabs__tab,
+.app-apps__head,
+.app-list-title,
+.app-facts dt,
+.app-phase-note__title,
+.app-about__name,
+.app-entry__title,
+.app-onboarding__title,
+.app-steps__item,
+.app-app-grid__group legend,
+.app-consent__title {
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 100;
 }
 
 /* ------------------------------------------------------------------------------------------ */
-/* Boot, outside-desktop and crash states                                                     */
+/* Entry screens: outside the desktop shell, boot, full-window crash (the sign-in card)        */
 /* ------------------------------------------------------------------------------------------ */
 
-.app-outside,
-.app-boot {
+.app-entry {
   height: 100%;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 24px;
+  padding: 24px 16px;
+  background: var(--sp-bg);
+}
+
+/* Centred with auto margins, so a card taller than the window starts at the top and scrolls. */
+.app-entry > * {
+  margin-block: auto;
+}
+
+/* The reference card: 16 px padding, a 12 px top row and 20 px above the logo, 32 px between
+   the logo, the title and the content. */
+.app-entry__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  width: 400px;
+  max-width: 100%;
+  padding: 48px 16px 16px;
+  background: var(--sp-surface-1);
+}
+
+.app-entry__title {
+  color: var(--sp-text);
+  font-size: var(--sp-text-xl);
+  font-weight: 600;
+  line-height: 1.1;
   text-align: center;
 }
 
-.app-outside h1 {
-  font-family: var(--sp-font-display);
-  font-size: var(--sp-text-xl);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.app-outside p {
-  max-width: 420px;
+/* A sentence under the title sits closer to it than the 32 px between blocks. */
+.app-entry__lead {
+  margin-top: -16px;
   color: var(--sp-text-muted);
+  text-align: center;
 }
 
-.app-boot__loading {
-  width: 220px;
+.app-entry__content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
 }
 
-.app-boot .sp-banner {
-  max-width: 460px;
-  text-align: left;
-}
-
+/* A view that failed inside the shell (the page, one settings tab, the indicator). */
 .app-crash {
   padding: 24px;
+}
+
+.app-settings > .app-crash {
+  padding: 0;
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -82,90 +140,91 @@
 .app-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   min-height: 0;
-  padding: 14px 10px 10px;
+  padding: 16px 10px 10px;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--app-sidebar-bg);
-  border-right: 1px solid var(--sp-border);
+  border-right: var(--sp-hairline) solid var(--sp-border);
 }
 
 .app-brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   padding: 0 6px;
   min-height: 26px;
 }
 
 .app-brand__name {
-  font-family: var(--sp-font-display);
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  color: var(--sp-text);
+  font-size: var(--sp-text-sm);
+  font-weight: 600;
 }
 
+/* Status pill: dot + state as text (state is never colour alone). */
 .app-status-label {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: var(--sp-text-sm);
-  font-weight: 600;
+  gap: 6px;
+  /* Not stretched in column layouts; never wider than its container. */
+  width: fit-content;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 8px;
+  border: var(--sp-hairline) solid var(--sp-border);
+  border-radius: var(--sp-radius-md);
+  background: var(--sp-hover);
   color: var(--sp-text);
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 
-.app-status-label--hero {
-  font-size: var(--sp-text-sm);
-  color: var(--sp-text-muted);
-  text-transform: none;
+.app-status-label > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.app-status-label--inline {
-  margin-left: 8px;
-  font-weight: 500;
-  color: var(--sp-text-muted);
-}
-
-/* Tracking card */
+/* Tracking card: flat on the card surface; a hairline separates it from the sidebar (1.05:1). */
 .app-track {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 11px 12px 12px;
-  border-radius: var(--sp-radius-lg);
-  border: 1px solid var(--sp-border);
+  gap: 4px;
+  padding: 12px;
+  border: var(--sp-hairline) solid var(--sp-border);
   background: var(--sp-surface-1);
   min-width: 0;
 }
 
 .app-track[data-state='tracking'] {
-  border-color: color-mix(in srgb, var(--sp-status-tracking) 26%, var(--sp-border));
+  border-color: color-mix(in srgb, var(--sp-status-tracking) 35%, transparent);
 }
 
 .app-track[data-state='idle'] {
-  border-color: color-mix(in srgb, var(--sp-status-idle) 26%, var(--sp-border));
+  border-color: color-mix(in srgb, var(--sp-status-idle) 35%, transparent);
 }
 
 .app-track__app {
-  margin-top: 4px;
+  margin-top: 6px;
   font-size: var(--sp-text-md);
   font-weight: 600;
   color: var(--sp-text);
 }
 
 .app-track__clock {
-  font-family: var(--sp-font-display);
   font-size: 20px;
   font-weight: 600;
-  letter-spacing: -0.01em;
   line-height: 1.2;
   color: var(--sp-text);
 }
 
+/* Narrow column: one step below body size, clamped. */
 .app-track__hint {
-  font-size: var(--sp-text-xs);
+  font-size: var(--sp-text-sm);
   line-height: 1.4;
   color: var(--sp-text-faint);
   display: -webkit-box;
@@ -193,25 +252,25 @@
   opacity: 0.7;
 }
 
-/* Navigation */
+/* Navigation: uppercase labels; the current section is the maroon selected state. */
 .app-nav ul {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .app-nav__item {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   width: 100%;
   height: 32px;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--sp-radius-sm);
+  border-radius: var(--sp-radius-md);
   background: transparent;
   color: var(--sp-text-muted);
-  font-size: var(--sp-text-md);
+  font-size: var(--sp-text-sm);
   font-weight: 500;
   text-align: left;
   transition:
@@ -219,22 +278,19 @@
     color var(--sp-duration) var(--sp-ease);
 }
 
-.app-nav__item:hover:not([aria-disabled='true']) {
+.app-nav__item:hover:not([aria-disabled='true']):not([aria-current='page']) {
   background: var(--sp-hover);
   color: var(--sp-text);
 }
 
 .app-nav__item[aria-current='page'] {
-  background: var(--sp-surface-3);
-  color: var(--sp-text);
-  box-shadow: inset 2px 0 0 var(--sp-accent);
+  background: var(--sp-selected);
+  color: var(--sp-on-selected);
 }
 
-:root[data-theme='light'] .app-nav__item[aria-current='page'] {
-  background: var(--sp-surface-1);
-  box-shadow:
-    inset 2px 0 0 var(--sp-accent),
-    0 1px 2px rgba(17, 17, 26, 0.06);
+.app-nav__item:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: -2px;
 }
 
 .app-nav__item[aria-disabled='true'] {
@@ -259,11 +315,6 @@
   white-space: nowrap;
 }
 
-.app-nav__tag {
-  height: 16px;
-  font-size: 10px;
-}
-
 .app-nav__external {
   display: inline-flex;
   color: var(--sp-text-faint);
@@ -271,10 +322,15 @@
 
 .app-nav__kbd {
   font-size: var(--sp-text-xs);
+  font-weight: 500;
   color: var(--sp-text-faint);
   opacity: 0;
   transition: opacity var(--sp-duration) var(--sp-ease);
   white-space: nowrap;
+}
+
+.app-nav__item[aria-current='page'] .app-nav__kbd {
+  color: color-mix(in srgb, var(--sp-on-selected) 80%, transparent);
 }
 
 .app-nav__item:hover .app-nav__kbd,
@@ -290,7 +346,7 @@
   justify-content: space-between;
   gap: 6px;
   padding-top: 8px;
-  border-top: 1px solid var(--sp-border);
+  border-top: var(--sp-hairline) solid var(--sp-border);
 }
 
 .app-sidebar__shortcuts .sp-kbd {
@@ -305,7 +361,7 @@
   max-width: 100%;
   padding: 2px 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--sp-radius-md);
   background: none;
   font-size: var(--sp-text-xs);
   color: var(--sp-text-faint);
@@ -331,10 +387,10 @@ button.app-sidebar__sync:hover {
 .app-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   max-width: var(--app-page-max);
   margin: 0 auto;
-  padding: 20px 24px 28px;
+  padding: 24px 24px 32px;
   min-width: 0;
 }
 
@@ -343,7 +399,7 @@ button.app-sidebar__sync:hover {
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  min-height: 44px;
+  min-height: 36px;
 }
 
 .app-page__titles {
@@ -351,15 +407,14 @@ button.app-sidebar__sync:hover {
 }
 
 .app-page__title {
-  font-family: var(--sp-font-display);
-  font-size: var(--sp-text-2xl);
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  color: var(--sp-text);
+  font-size: var(--sp-text-xl);
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .app-page__subtitle {
-  margin-top: 2px;
+  margin-top: 6px;
   color: var(--sp-text-muted);
   font-size: var(--sp-text-md);
   overflow: hidden;
@@ -374,21 +429,24 @@ button.app-sidebar__sync:hover {
   gap: 8px;
 }
 
+/* A badge: uppercase on a hairline chip. */
 .app-page__note {
-  font-size: var(--sp-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border: var(--sp-hairline) solid var(--sp-border);
+  border-radius: var(--sp-radius-md);
   color: var(--sp-text-faint);
-  padding: 3px 8px;
-  border: 1px solid var(--sp-border);
-  border-radius: 999px;
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .app-grid-2 {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
+  gap: 16px;
   align-items: start;
 }
 
@@ -416,6 +474,10 @@ button.app-sidebar__sync:hover {
   text-underline-offset: 2px;
 }
 
+.app-link:hover {
+  color: var(--sp-text);
+}
+
 .app-footnote {
   font-size: var(--sp-text-sm);
   color: var(--sp-text-faint);
@@ -440,34 +502,33 @@ button.app-sidebar__sync:hover {
 
 .app-dialog-text {
   color: var(--sp-text-muted);
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
 }
 
 .app-dialog-text + .app-dialog-text {
   margin-top: 8px;
 }
 
-/* Hero (status) -------------------------------------------------------------------------- */
+/* Status (Home) -------------------------------------------------------------------------- */
 
+/* A flat card, like .sp-card; the state shows as a tinted hairline next to the status pill. */
 .app-hero {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 16px 18px;
-  border-radius: var(--sp-radius-lg);
-  border: 1px solid var(--sp-border);
+  padding: 16px;
+  border: var(--sp-hairline) solid transparent;
   background: var(--sp-surface-1);
   min-width: 0;
 }
 
 .app-hero[data-state='tracking'] {
-  border-color: color-mix(in srgb, var(--sp-status-tracking) 24%, var(--sp-border));
-  background: linear-gradient(90deg, color-mix(in srgb, var(--sp-status-tracking) 5%, var(--sp-surface-1)), var(--sp-surface-1) 60%);
+  border-color: color-mix(in srgb, var(--sp-status-tracking) 35%, transparent);
 }
 
 .app-hero[data-state='idle'] {
-  border-color: color-mix(in srgb, var(--sp-status-idle) 24%, var(--sp-border));
+  border-color: color-mix(in srgb, var(--sp-status-idle) 35%, transparent);
 }
 
 .app-hero[data-state='clockBehind'] {
@@ -477,23 +538,23 @@ button.app-sidebar__sync:hover {
 .app-hero__main {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
   min-width: 0;
   flex: 1;
 }
 
+/* The app name or state headline: data, so sentence case. */
 .app-hero__headline {
-  font-family: var(--sp-font-display);
+  margin-top: 4px;
+  color: var(--sp-text);
   font-size: var(--sp-text-xl);
   font-weight: 600;
-  letter-spacing: -0.015em;
   line-height: 1.25;
-  margin-top: 2px;
 }
 
 .app-hero__explanation {
   color: var(--sp-text-muted);
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
 }
 
 .app-hero__side {
@@ -509,18 +570,19 @@ button.app-sidebar__sync:hover {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  gap: 2px;
 }
 
 .app-hero__timer-label {
-  font-size: var(--sp-text-xs);
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
   color: var(--sp-text-faint);
 }
 
 .app-hero__clock {
-  font-family: var(--sp-font-display);
+  color: var(--sp-text);
   font-size: var(--sp-text-2xl);
   font-weight: 600;
-  letter-spacing: -0.01em;
   line-height: 1.15;
 }
 
@@ -595,8 +657,8 @@ button.app-sidebar__sync:hover {
   grid-template-columns: subgrid;
   align-items: center;
   min-height: 34px;
-  border-top: 1px solid var(--sp-border);
-  font-size: var(--sp-text-sm);
+  border-top: var(--sp-hairline) solid var(--sp-border);
+  font-size: var(--sp-text-md);
 }
 
 .app-intervals__row:first-child {
@@ -625,6 +687,7 @@ button.app-sidebar__sync:hover {
   white-space: nowrap;
 }
 
+/* Active / Idle: a small label (the hatch and the word carry it, not the colour). */
 .app-kind {
   justify-self: start;
   font-size: var(--sp-text-xs);
@@ -654,7 +717,7 @@ button.app-sidebar__sync:hover {
 .app-table td {
   height: 36px;
   padding: 0 12px;
-  border-top: 1px solid var(--sp-border);
+  border-top: var(--sp-hairline) solid var(--sp-border);
   text-align: left;
   font-weight: 400;
   white-space: nowrap;
@@ -690,8 +753,10 @@ button.app-sidebar__sync:hover {
   text-overflow: clip;
 }
 
+/* Fits the widest uppercase head: "Foreground" is 85.4 px at 12 px / 500, plus the 18 px sort
+   icon slot, inside 96 px of content (+ 8 px of hover bleed). */
 .app-table thead th.app-table__num {
-  width: 112px;
+  width: 120px;
 }
 
 .app-table tbody th {
@@ -701,7 +766,7 @@ button.app-sidebar__sync:hover {
 
 .app-table tfoot th,
 .app-table tfoot td {
-  border-top: 1px solid var(--sp-border-strong);
+  border-top: var(--sp-hairline) solid var(--sp-border-strong);
   color: var(--sp-text);
   font-weight: 600;
 }
@@ -720,19 +785,21 @@ button.app-sidebar__sync:hover {
 .app-table__sort {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   /* The negative side margins let the hover background bleed 4px past the cell padding. */
   max-width: calc(100% + 8px);
   min-width: 0;
   height: 24px;
-  padding: 0 4px;
+  padding: 0 2px;
   margin: 0 -4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--sp-radius-md);
   background: transparent;
   color: inherit;
   font-size: inherit;
   font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
 }
 
 .app-table__num .app-table__sort {
@@ -785,15 +852,34 @@ button.app-sidebar__sync:hover {
   min-width: 0;
 }
 
+/* In a narrow column the tag gives way first (it shrinks 100x faster), so the name stays readable. */
+.app-table__app > .sp-truncate {
+  min-width: 48px;
+}
+
+/* A badge ("Hidden in reports", "Partial week"), as .sp-badge--subtle. */
 .app-table__tag {
-  flex: none;
+  flex: 0 100 auto;
+  display: inline-block;
+  min-width: 0;
+  height: 20px;
   margin-left: 8px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--sp-border);
-  font-size: 10.5px;
+  padding: 0 6px;
+  overflow: hidden;
+  border-radius: var(--sp-radius-md);
+  border: var(--sp-hairline) solid var(--sp-border);
+  font-size: var(--sp-text-sm);
   font-weight: 500;
+  line-height: 18px;
   color: var(--sp-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Inside the name cell the flex gap already spaces it. */
+.app-table__app > .app-table__tag {
+  margin-left: 0;
 }
 
 /* Filters ------------------------------------------------------------------------------- */
@@ -810,7 +896,7 @@ button.app-sidebar__sync:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   color: var(--sp-text-muted);
 }
 
@@ -823,12 +909,14 @@ button.app-sidebar__sync:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--sp-radius-md);
-  border: 1px solid var(--sp-border);
+  padding: 12px 16px;
   background: var(--sp-surface-1);
   font-size: var(--sp-text-sm);
   color: var(--sp-text-muted);
+}
+
+.app-custom-range label {
+  font-weight: 500;
 }
 
 .app-custom-range .sp-input {
@@ -844,62 +932,54 @@ button.app-sidebar__sync:hover {
 /* Settings                                                                                   */
 /* ------------------------------------------------------------------------------------------ */
 
+/* Section tabs: the selected one is the maroon selected state. The 4 px padding keeps the focus
+   ring inside the scroll box; the seven labels (415.6 px at 12 px / 500) fit the 620 px content
+   width of the minimum window without scrolling. */
 .app-tabs {
   display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--sp-border);
+  gap: 4px;
+  padding: 4px 4px 12px;
+  margin: -8px -4px 0;
+  border-bottom: var(--sp-hairline) solid var(--sp-border);
   overflow-x: auto;
   scrollbar-width: none;
-  margin-top: -4px;
 }
 
 .app-tabs__tab {
-  position: relative;
   flex: none;
-  height: 34px;
+  height: 30px;
   padding: 0 10px;
   border: 0;
+  border-radius: var(--sp-radius-md);
   background: transparent;
   color: var(--sp-text-muted);
-  font-size: var(--sp-text-md);
+  font-size: var(--sp-text-sm);
   font-weight: 500;
-  border-radius: var(--sp-radius-sm) var(--sp-radius-sm) 0 0;
-  transition: color var(--sp-duration) var(--sp-ease);
+  transition:
+    background-color var(--sp-duration) var(--sp-ease),
+    color var(--sp-duration) var(--sp-ease);
 }
 
-.app-tabs__tab:hover {
+.app-tabs__tab:hover:not([aria-current='page']) {
+  background: var(--sp-hover);
   color: var(--sp-text);
 }
 
 .app-tabs__tab[aria-current='page'] {
-  color: var(--sp-text);
-}
-
-.app-tabs__tab[aria-current='page']::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--sp-accent);
-}
-
-.app-tabs__tab:focus-visible {
-  outline-offset: -2px;
+  background: var(--sp-selected);
+  color: var(--sp-on-selected);
 }
 
 .app-settings {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   min-width: 0;
 }
 
 .app-setting {
   padding: 12px 0;
-  border-top: 1px solid var(--sp-border);
+  border-top: var(--sp-hairline) solid var(--sp-border);
   min-width: 0;
 }
 
@@ -939,7 +1019,7 @@ button.app-sidebar__sync:hover {
 }
 
 .app-setting__description {
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   color: var(--sp-text-faint);
   max-width: 560px;
 }
@@ -974,7 +1054,7 @@ button.app-sidebar__sync:hover {
 }
 
 .app-setting__status {
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   color: var(--sp-text-muted);
 }
 
@@ -1034,6 +1114,12 @@ button.app-sidebar__sync:hover {
   padding-left: 28px;
 }
 
+/* Search sentences and executable examples are content prompts, not uppercase UI labels. */
+.app-search .sp-input::placeholder,
+.app-matchers .sp-input::placeholder {
+  text-transform: none;
+}
+
 .app-search__icon {
   position: absolute;
   left: 9px;
@@ -1049,20 +1135,22 @@ button.app-sidebar__sync:hover {
   margin-top: -4px;
 }
 
+/* "In reports" is 70.7 px at 12 px / 500 uppercase, so that column is 78 px. */
 .app-apps__head,
 .app-apps__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px 60px 70px 60px;
+  grid-template-columns: minmax(0, 1fr) 132px 64px 78px 60px;
   align-items: center;
   column-gap: 10px;
   padding: 0 16px;
 }
 
 .app-apps__head {
-  height: 24px;
-  font-size: var(--sp-text-xs);
+  height: 28px;
+  font-size: var(--sp-text-sm);
   font-weight: 500;
   color: var(--sp-text-faint);
+  white-space: nowrap;
 }
 
 .app-apps__head span:nth-child(n + 3) {
@@ -1073,7 +1161,7 @@ button.app-sidebar__sync:hover {
   min-height: 48px;
   padding-top: 6px;
   padding-bottom: 6px;
-  border-top: 1px solid var(--sp-border);
+  border-top: var(--sp-hairline) solid var(--sp-border);
 }
 
 .app-apps__row[data-off='true'] .app-apps__title {
@@ -1146,8 +1234,9 @@ button.app-sidebar__sync:hover {
   align-items: center;
 }
 
+/* Long, descriptive column heads with a case-sensitive-looking token (".exe"): sentence case. */
 .app-matchers__head {
-  font-size: var(--sp-text-xs);
+  font-size: var(--sp-text-sm);
   font-weight: 500;
   color: var(--sp-text-faint);
 }
@@ -1196,8 +1285,8 @@ button.app-sidebar__sync:hover {
   column-gap: 10px;
   width: 100%;
   padding: 6px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--sp-radius-sm);
+  border: var(--sp-hairline) solid transparent;
+  border-radius: var(--sp-radius-md);
   background: transparent;
   text-align: left;
 }
@@ -1205,6 +1294,11 @@ button.app-sidebar__sync:hover {
 .app-running__item:hover {
   background: var(--sp-hover);
   border-color: var(--sp-border);
+}
+
+/* Full-width rows in a scroll box: an inset ring stays visible. */
+.app-running__item:focus-visible {
+  outline-offset: -2px;
 }
 
 /* Already recognised: still selectable (a custom entry outranks a built-in on a tie), but quieter. */
@@ -1262,15 +1356,16 @@ button.app-sidebar__sync:hover {
   gap: 16px 24px;
 }
 
+/* Sub-section titles inside cards, as .sp-card__title but quieter. */
 .app-list-title {
   font-size: var(--sp-text-sm);
   font-weight: 600;
   color: var(--sp-text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 * + .app-list-title {
-  margin-top: 16px;
+  margin-top: 20px;
 }
 
 .app-privacy-lists .app-list-title {
@@ -1307,20 +1402,21 @@ button.app-sidebar__sync:hover {
 .app-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 24px;
+  gap: 16px 24px;
 }
 
 .app-facts--spaced {
   margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--sp-border);
+  padding-top: 16px;
+  border-top: var(--sp-hairline) solid var(--sp-border);
 }
 
+/* Eyebrow labels over each value. */
 .app-facts dt {
-  font-size: var(--sp-text-xs);
+  font-size: var(--sp-text-sm);
   font-weight: 500;
   color: var(--sp-text-faint);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .app-facts dd {
@@ -1347,9 +1443,9 @@ button.app-sidebar__sync:hover {
 .app-fields li code {
   display: inline-block;
   padding: 2px 7px;
-  border-radius: 4px;
-  border: 1px solid var(--sp-border);
-  background: var(--sp-surface-2);
+  border-radius: var(--sp-radius-md);
+  border: var(--sp-hairline) solid var(--sp-border);
+  background: var(--sp-hover);
   font-size: 11px;
   color: var(--sp-text-muted);
 }
@@ -1389,41 +1485,47 @@ button.app-sidebar__sync:hover {
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 9px;
-  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-radius-md);
+  border: var(--sp-hairline) solid var(--sp-border);
   background: var(--sp-surface-2);
   color: var(--sp-text-muted);
 }
 
+/* The card's own title (the card has none): uppercase, as .sp-card__title. */
 .app-phase-note__title {
+  padding-top: 2px;
+  font-size: var(--sp-text-sm);
   font-weight: 600;
+  color: var(--sp-text);
 }
 
 .app-phase-note__text {
-  margin-top: 2px;
+  margin-top: 6px;
   color: var(--sp-text-muted);
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   max-width: 600px;
 }
 
 .app-about {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 
 .app-about__name {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--sp-font-display);
-  font-size: var(--sp-text-lg);
+  color: var(--sp-text);
+  font-size: var(--sp-text-xl);
   font-weight: 600;
+  line-height: 1.1;
 }
 
 .app-about__version {
+  margin-top: 6px;
   color: var(--sp-text-muted);
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
 }
 
 .app-shortcuts {
@@ -1437,7 +1539,7 @@ button.app-sidebar__sync:hover {
   justify-content: space-between;
   gap: 12px;
   min-height: 34px;
-  border-top: 1px solid var(--sp-border);
+  border-top: var(--sp-hairline) solid var(--sp-border);
 }
 
 .app-shortcuts__row:first-child {
@@ -1462,18 +1564,16 @@ button.app-sidebar__sync:hover {
 }
 
 /* ------------------------------------------------------------------------------------------ */
-/* Onboarding                                                                                 */
+/* Onboarding: the entry card, wide enough for the application list                          */
 /* ------------------------------------------------------------------------------------------ */
 
 .app-onboarding {
   height: 100%;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 24px 16px;
   overflow: auto;
-  background:
-    radial-gradient(600px 300px at 50% -10%, color-mix(in srgb, var(--sp-accent) 7%, transparent), transparent),
-    var(--sp-bg);
+  background: var(--sp-bg);
 }
 
 .app-onboarding__card {
@@ -1481,33 +1581,30 @@ button.app-sidebar__sync:hover {
   flex-direction: column;
   width: min(720px, 100%);
   max-height: calc(100vh - 48px);
-  border-radius: 14px;
-  border: 1px solid var(--sp-border-strong);
   background: var(--sp-surface-1);
-  box-shadow: var(--sp-shadow-pop);
   min-height: 0;
 }
 
 .app-onboarding__header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
-  padding: 16px 22px 0;
+  padding: 24px 24px 0;
 }
 
 .app-onboarding__body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 18px 22px 8px;
+  gap: 20px;
+  padding: 28px 24px 16px;
   overflow-y: auto;
   min-height: 0;
   flex: 1;
 }
 
 .app-onboarding__card > .app-inline-error {
-  padding: 0 22px;
+  padding: 0 24px;
 }
 
 .app-onboarding__footer {
@@ -1515,29 +1612,36 @@ button.app-sidebar__sync:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 22px 16px;
-  border-top: 1px solid var(--sp-border);
+  padding: 16px 24px 24px;
+  border-top: var(--sp-hairline) solid var(--sp-border);
   margin-top: 8px;
+}
+
+/* The 48 px primary action of the entry screens. */
+.app-onboarding__next {
+  min-width: 200px;
 }
 
 .app-onboarding__intro {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  text-align: center;
 }
 
 .app-onboarding__title {
-  font-family: var(--sp-font-display);
-  font-size: var(--sp-text-2xl);
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  color: var(--sp-text);
+  font-size: var(--sp-text-xl);
+  font-weight: 600;
+  line-height: 1.1;
   outline: none;
 }
 
 .app-onboarding__text {
   color: var(--sp-text-muted);
-  max-width: 600px;
+  max-width: 560px;
 }
 
 .app-onboarding__settings {
@@ -1549,37 +1653,43 @@ button.app-sidebar__sync:hover {
   border-top: 0;
 }
 
+/* Setup steps: uppercase chips; the current one is the maroon selected state. */
 .app-steps {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 14px;
+  gap: 4px;
 }
 
 .app-steps__item {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--sp-text-sm);
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--sp-radius-md);
   color: var(--sp-text-faint);
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .app-steps__dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--sp-surface-3);
   box-shadow: inset 0 0 0 1px var(--sp-border-strong);
 }
 
 .app-steps__item[data-state='current'] {
-  color: var(--sp-text);
-  font-weight: 600;
+  background: var(--sp-selected);
+  color: var(--sp-on-selected);
 }
 
 .app-steps__item[data-state='current'] .app-steps__dot {
-  background: var(--sp-accent);
-  box-shadow: 0 0 0 3px var(--sp-accent-soft);
+  background: var(--sp-on-selected);
+  box-shadow: none;
 }
 
 .app-steps__item[data-state='done'] {
@@ -1615,20 +1725,19 @@ button.app-sidebar__sync:hover {
 
 .app-app-grid__group {
   break-inside: avoid;
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   padding: 0;
   border: 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
 }
 
 .app-app-grid__group legend {
   padding: 0;
-  margin-bottom: 7px;
-  font-size: var(--sp-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
   color: var(--sp-text-faint);
 }
 
@@ -1636,9 +1745,8 @@ button.app-sidebar__sync:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 14px 16px;
-  border-radius: var(--sp-radius-md);
-  border: 1px solid var(--sp-border);
+  padding: 16px;
+  border: var(--sp-hairline) solid var(--sp-border);
   background: var(--sp-surface-2);
 }
 
@@ -1665,7 +1773,7 @@ button.app-sidebar__sync:hover {
 }
 
 .app-auth__switch {
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   color: var(--sp-text-muted);
 }
 
@@ -1699,10 +1807,10 @@ button.app-sidebar__sync:hover {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  border: 1px solid var(--sp-accent-border);
+  border: var(--sp-hairline) solid var(--sp-accent-border);
   background: var(--sp-accent-soft);
   color: var(--sp-accent-text);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .app-account__text {
@@ -1714,24 +1822,24 @@ button.app-sidebar__sync:hover {
 }
 
 .app-account__email {
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   color: var(--sp-text-muted);
 }
 
-/* Explicit consent for history recorded while signed out. */
+/* Explicit consent for history recorded while signed out: a flat panel in the accent tint. */
 .app-consent {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 16px;
-  border-radius: var(--sp-radius-lg);
-  border: 1px solid var(--sp-accent-border);
+  padding: 16px;
+  border: var(--sp-hairline) solid var(--sp-accent-border);
   background: var(--sp-accent-soft);
 }
 
 .app-consent__title {
-  font-size: var(--sp-text-lg);
+  font-size: var(--sp-text-sm);
   font-weight: 600;
+  color: var(--sp-text);
 }
 
 .app-consent__text {
@@ -1740,7 +1848,7 @@ button.app-sidebar__sync:hover {
 }
 
 .app-consent__hint {
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   color: var(--sp-text-muted);
   max-width: 640px;
 }
@@ -1776,7 +1884,7 @@ button.app-sidebar__sync:hover {
 }
 
 .app-cloud__note-actions {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .app-cloud__note-actions:empty {
@@ -1786,7 +1894,7 @@ button.app-sidebar__sync:hover {
 .app-sync-phase {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .app-sync-phase + .sp-banner {
@@ -1799,7 +1907,7 @@ button.app-sidebar__sync:hover {
 
 .app-facts__note {
   margin-top: 4px;
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   color: var(--sp-text-faint);
   max-width: 420px;
 }
@@ -1827,13 +1935,13 @@ button.app-sidebar__sync:hover {
   flex-direction: column;
   gap: 8px;
   margin-top: 16px;
-  padding: 14px 16px;
-  border-radius: var(--sp-radius-md);
-  border: 1px solid var(--sp-border-strong);
+  padding: 16px;
+  border: var(--sp-hairline) solid var(--sp-border-strong);
   background: var(--sp-surface-2);
   max-width: 720px;
 }
 
+/* Holds the invitee's email and the workspace name: sentence case. */
 .app-invite-code__title {
   color: var(--sp-text);
 }
@@ -1856,15 +1964,15 @@ button.app-sidebar__sync:hover {
   gap: 4px;
   padding-left: 18px;
   list-style: disc;
-  font-size: var(--sp-text-sm);
+  font-size: var(--sp-text-md);
   color: var(--sp-text-muted);
 }
 
 .app-sharing-state {
   margin-top: 12px;
   padding: 8px 12px;
-  border-radius: var(--sp-radius-sm);
-  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-radius-md);
+  border: var(--sp-hairline) solid var(--sp-border);
   background: var(--sp-surface-2);
   color: var(--sp-text);
   max-width: 760px;

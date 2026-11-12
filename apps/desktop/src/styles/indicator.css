@@ -1,6 +1,10 @@
 /*
  * Compact indicator window: 320 x 204 (window_manager.rs), frameless, always on top. Everything fits without
  * scrolling; the header is the drag region.
+ *
+ * On the plum card surface: the status pill (dot + state as text) in the header, the app name and
+ * the session clock in cream, small uppercase labels in faint (#a39399 on #200925, 6.4:1).
+ * Height budget: header 36 + body 117 + footer 49 + the 2 hairline edges = 204.
  */
 
 :root[data-window='indicator'] body {
@@ -13,17 +17,17 @@
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  border: 1px solid var(--sp-border-strong);
+  border: var(--sp-hairline) solid var(--sp-border-strong);
   background: var(--sp-surface-1);
   user-select: none;
 }
 
 .ind[data-state='tracking'] {
-  border-color: color-mix(in srgb, var(--sp-status-tracking) 30%, var(--sp-border-strong));
+  border-color: color-mix(in srgb, var(--sp-status-tracking) 40%, transparent);
 }
 
 .ind[data-state='idle'] {
-  border-color: color-mix(in srgb, var(--sp-status-idle) 30%, var(--sp-border-strong));
+  border-color: color-mix(in srgb, var(--sp-status-idle) 40%, transparent);
 }
 
 .ind__header {
@@ -44,6 +48,9 @@
 
 .ind__status--loading {
   font-size: var(--sp-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase;
   color: var(--sp-text-faint);
 }
 
@@ -61,11 +68,11 @@
   padding: 2px 14px 0;
 }
 
+/* The application name: data, so sentence case. */
 .ind__app {
-  font-family: var(--sp-font-display);
+  color: var(--sp-text);
   font-size: var(--sp-text-lg);
   font-weight: 600;
-  letter-spacing: -0.01em;
   line-height: 1.3;
 }
 
@@ -76,15 +83,17 @@
 }
 
 .ind__clock {
-  font-family: var(--sp-font-display);
+  color: var(--sp-text);
   font-size: 26px;
   font-weight: 600;
-  letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
 .ind__live-label {
   font-size: var(--sp-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase;
   color: var(--sp-text-faint);
 }
 
@@ -135,7 +144,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px 12px 14px;
-  border-top: 1px solid var(--sp-border);
+  border-top: var(--sp-hairline) solid var(--sp-border);
 }
 
 /* Errors from the pause control or "Open" float above the footer instead of pushing it. */
@@ -147,8 +156,8 @@
   bottom: 54px;
   margin: 0;
   padding: 5px 8px;
-  border-radius: var(--sp-radius-sm);
-  border: 1px solid var(--sp-danger-border);
+  border-radius: var(--sp-radius-md);
+  border: var(--sp-hairline) solid var(--sp-danger-border);
   background: var(--sp-surface-overlay);
   font-size: var(--sp-text-xs);
   z-index: 2;

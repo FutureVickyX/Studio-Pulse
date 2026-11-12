@@ -788,7 +788,7 @@ function AddApplicationDialog({
                       {item.path}
                     </span>
                     {item.matchedApplicationId ? (
-                      <Badge tone="subtle">
+                      <Badge tone="subtle" className="sp-keep-case">
                         {matched ? `Already listed as ${matched.displayName}${matched.enabled ? '' : ' (off)'}` : 'Already listed'}
                       </Badge>
                     ) : null}
