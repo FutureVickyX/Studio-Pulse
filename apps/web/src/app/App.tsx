@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { StudioPulseClient } from '@studio-pulse/database';
 import { Banner, BrandMark, SkeletonLines } from '@studio-pulse/ui';
@@ -15,6 +16,7 @@ import { clearQueries, useQuery } from '../lib/store';
 import { setUpClient } from '../lib/supabase';
 import { ProblemBanner } from '../components/common';
 import { Notices } from '../components/notices';
+import { AuthLayout } from './AuthLayout';
 import { Onboarding } from './Onboarding';
 import { Shell } from './Shell';
 import { SignIn } from './SignIn';
@@ -39,13 +41,29 @@ export function App() {
 
 function NotConfigured({ reason }: { reason: string }) {
   return (
-    <main className="web-outside">
-      <BrandMark size={40} />
-      <h1>Studio Pulse workspace</h1>
-      <Banner tone="warning" title="Not connected to Supabase">
-        {reason} See apps/web/README.md.
-      </Banner>
-    </main>
+    <AuthLayout>
+      <OutsideCard title="Studio Pulse workspace">
+        <Banner tone="warning" title="Not connected to Supabase">
+          {reason} See apps/web/README.md.
+        </Banner>
+      </OutsideCard>
+    </AuthLayout>
+  );
+}
+
+/** The sign-in card's frame (logo, heading) around a message, for the other outside screens. */
+function OutsideCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="web-entry">
+      <section className="web-entry__card" aria-label={title}>
+        <div className="web-entry__top" />
+        <div className="web-entry__body">
+          <BrandMark size={77.2158} title="Studio Pulse" />
+          <h1 className="web-entry__title">{title}</h1>
+          <div className="web-entry__content">{children}</div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -77,12 +95,11 @@ function SessionGate({ client }: { client: StudioPulseClient }) {
 
 function Boot() {
   return (
-    <main className="web-outside">
-      <BrandMark size={32} />
-      <div className="web-boot__loading">
+    <AuthLayout>
+      <OutsideCard title="Loading your workspace">
         <SkeletonLines lines={2} label="Loading your workspace" />
-      </div>
-    </main>
+      </OutsideCard>
+    </AuthLayout>
   );
 }
 
@@ -154,10 +171,11 @@ function WorkspaceGate({ client, session }: { client: StudioPulseClient; session
   if (workspaces.data === undefined) {
     if (workspaces.problem) {
       return (
-        <main className="web-outside">
-          <BrandMark size={32} />
-          <ProblemBanner problem={workspaces.problem} onRetry={() => void workspaces.reload()} title="Couldn’t load your workspaces" />
-        </main>
+        <AuthLayout>
+          <OutsideCard title="Studio Pulse workspace">
+            <ProblemBanner problem={workspaces.problem} onRetry={() => void workspaces.reload()} title="Couldn’t load your workspaces" />
+          </OutsideCard>
+        </AuthLayout>
       );
     }
     return <Boot />;

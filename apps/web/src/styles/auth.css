@@ -1,0 +1,317 @@
+/*
+ * Outside the workspace (sign-in, onboarding, boot): the Figma "Sign in" / "Create account" frames
+ * (1440 × 748): a blurred colour-band hero on the left half, the card centred on the right half.
+ */
+
+.web-entry-page {
+  height: 100%;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  background: var(--sp-bg);
+  color: var(--sp-text);
+}
+
+/* ---- Hero (Figma "Campaign summary") ----------------------------------------------------- */
+
+.web-entry-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100%;
+  overflow: hidden;
+  background: #241f18;
+}
+
+.web-entry-hero__glow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #130a05;
+  container-type: size;
+}
+
+/* Two blocks of 466.69 / 748 of the height, overlapping by 80 / 748, each blurred twice. The blurs
+   are in the same units (36.594 px and 71.287 px at 748 px tall) so the bands keep their look in
+   the short hero on narrow screens. */
+.web-entry-hero__block {
+  position: relative;
+  flex: none;
+  width: 100%;
+  height: 62.39cqh;
+  overflow: hidden;
+  border-radius: 14.257px;
+  filter: blur(4.892cqh);
+}
+
+.web-entry-hero__block--top {
+  margin-bottom: -10.7cqh;
+}
+
+.web-entry-hero__bands {
+  position: absolute;
+  inset: 0 0.2% 0 0;
+  display: flex;
+  flex-direction: column;
+  filter: blur(9.53cqh);
+}
+
+.web-entry-hero__band {
+  flex-basis: 0;
+  min-height: 0;
+}
+
+.web-entry-hero__copy {
+  position: relative;
+  padding: 32px;
+  color: #ffffff;
+  font-family: var(--sp-font-ui);
+  font-size: 46px;
+  font-weight: 500;
+  line-height: 53px;
+  font-variation-settings: 'wdth' 100;
+}
+
+.web-entry-hero__serif {
+  font-family: var(--sp-font-serif);
+  font-weight: 400;
+}
+
+/* ---- Content (Figma "Connection card") --------------------------------------------------- */
+
+.web-entry-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 620px;
+  padding: 72px 16px;
+  background: var(--sp-bg);
+  box-shadow: 0 12px 32px rgba(23, 19, 14, 0.08);
+}
+
+/* Centred with auto margins, so content taller than the screen starts at the top and scrolls. */
+.web-entry-main--center > * {
+  margin-block: auto;
+}
+
+.web-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 400px;
+  max-width: 100%;
+  padding-top: 29px;
+}
+
+.web-entry__tabs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.web-entry__tab {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 12px;
+  border: var(--sp-hairline) solid var(--sp-border-strong);
+  border-radius: var(--sp-radius-md);
+  background: color-mix(in srgb, var(--sp-text) 5%, transparent);
+  color: color-mix(in srgb, var(--sp-text) 50%, transparent);
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--sp-caps-tracking);
+  text-align: left;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 100;
+  cursor: pointer;
+  transition:
+    background-color var(--sp-duration) var(--sp-ease),
+    color var(--sp-duration) var(--sp-ease);
+}
+
+.web-entry__tab:hover:not([aria-pressed='true']) {
+  color: var(--sp-text);
+}
+
+.web-entry__tab[aria-pressed='true'] {
+  background: var(--sp-selected);
+  color: var(--sp-on-selected);
+  cursor: default;
+}
+
+.web-entry__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  padding: 16px;
+  overflow: hidden;
+  background: var(--sp-surface-1);
+}
+
+.web-entry__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 12px;
+}
+
+/* A 12 px arrow as drawn, with a 28 px target around it. */
+.web-entry__back {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.web-entry__back::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.web-entry__back img {
+  display: block;
+  rotate: -90deg;
+}
+
+.web-entry__back:hover {
+  opacity: 0.75;
+}
+
+.web-entry__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  width: 100%;
+}
+
+.web-entry__title {
+  color: var(--sp-text);
+  font-family: var(--sp-font-ui);
+  font-size: var(--sp-text-xl);
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: var(--sp-caps-tracking);
+  text-align: center;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 100;
+}
+
+/* A sentence under the title (onboarding) sits closer to it than the 32 px between blocks. */
+.web-entry__lead {
+  margin-top: -16px;
+  color: var(--sp-text-muted);
+  text-align: center;
+}
+
+.web-entry__content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.web-entry__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.web-entry__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.web-entry__field .sp-input {
+  width: 100%;
+}
+
+.web-entry__error {
+  color: var(--sp-danger-text);
+  font-size: var(--sp-text-sm);
+}
+
+.web-entry__submit {
+  width: 100%;
+}
+
+.web-entry__link {
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: var(--sp-text-muted);
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.web-entry__link:hover {
+  color: var(--sp-text);
+  text-decoration: underline;
+}
+
+.web-entry__tab:focus-visible,
+.web-entry__back:focus-visible,
+.web-entry__link:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Narrow screens: the hero becomes a band above the content --------------------------- */
+
+@media (max-width: 880px) {
+  .web-entry-page {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .web-entry-hero {
+    min-height: 168px;
+  }
+
+  /* In the short hero the copy lands on the peach band (white on it is ~2:1); a scrim under the
+     copy keeps it above 4.5:1. */
+  .web-entry-hero__glow::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(19, 10, 5, 0.8), rgba(19, 10, 5, 0.45) 60%, rgba(19, 10, 5, 0));
+  }
+
+  .web-entry-hero__copy {
+    padding: 20px 16px;
+    font-size: 30px;
+    line-height: 36px;
+  }
+
+  .web-entry-main {
+    min-height: 0;
+    padding: 24px 16px 40px;
+  }
+
+  .web-entry-main--center > * {
+    margin-block: 0;
+  }
+
+  .web-entry {
+    padding-top: 0;
+  }
+}

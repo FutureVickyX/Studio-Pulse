@@ -11,13 +11,9 @@ import { clockTime } from '../lib/format';
 import { describeStatus, hasLiveSession } from '../lib/status';
 
 /**
- * Compact always-on-top indicator (320 x 204, frameless), shown above the tray icon. Always dark:
- * it floats over the taskbar and the native window background is dark (no light flash on show).
+ * Compact always-on-top indicator (320 x 204, frameless), shown above the tray icon.
  */
 export function IndicatorApp() {
-  useEffect(() => {
-    document.documentElement.dataset.theme = 'dark';
-  }, []);
   const { data: status, error, reload } = useTrackerStatus();
   const [openError, setOpenError] = useState<ApiError | null>(null);
   const [opening, setOpening] = useState(false);

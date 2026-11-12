@@ -1,7 +1,7 @@
 import { Component, useId } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { formatDuration } from '@studio-pulse/time-engine';
-import { Banner, Button, StatusDot } from '@studio-pulse/ui';
+import { Banner, BrandMark, Button, StatusDot } from '@studio-pulse/ui';
 import type { StatusTone } from '@studio-pulse/ui';
 import type { CommandError } from '@studio-pulse/shared-types';
 import { useNow } from '../hooks/useLive';
@@ -42,6 +42,30 @@ export function StatusLabel({
       <StatusDot tone={presentation.tone as StatusTone} size={size} />
       <span>{presentation.label}</span>
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Entry screen: the sign-in card of the web app (outside the desktop, boot, full-window crash)
+// ---------------------------------------------------------------------------------------------
+
+/** The Figma logo's height in the entry card (113.985 × 77.2158), as on the web sign-in page. */
+const ENTRY_LOGO_HEIGHT = 77.2158;
+
+/** A centred card on the page background: the logo, an uppercase title, an optional line, content. */
+export function EntryScreen({ title, lead, children }: { title: ReactNode; lead?: ReactNode; children?: ReactNode }) {
+  const titleId = useId();
+  return (
+    <main className="app-entry">
+      <section className="app-entry__card" aria-labelledby={titleId}>
+        <BrandMark size={ENTRY_LOGO_HEIGHT} />
+        <h1 id={titleId} className="app-entry__title">
+          {title}
+        </h1>
+        {lead ? <p className="app-entry__lead">{lead}</p> : null}
+        {children ? <div className="app-entry__content">{children}</div> : null}
+      </section>
+    </main>
   );
 }
 
@@ -141,8 +165,11 @@ interface BoundaryState {
   error: Error | null;
 }
 
-/** Last-resort boundary: a view that throws shows a banner instead of a blank window. */
-export class ErrorBoundary extends Component<{ children: ReactNode; label?: string }, BoundaryState> {
+/**
+ * Last-resort boundary: a view that throws shows a banner instead of a blank window. With `screen`
+ * (the main window's root), the banner sits in the full-window entry card.
+ */
+export class ErrorBoundary extends Component<{ children: ReactNode; label?: string; screen?: boolean }, BoundaryState> {
   override state: BoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error): BoundaryState {
@@ -155,20 +182,20 @@ export class ErrorBoundary extends Component<{ children: ReactNode; label?: stri
 
   override render() {
     if (!this.state.error) return this.props.children;
-    return (
-      <div className="app-crash">
-        <Banner
-          tone="danger"
-          title={`${this.props.label ?? 'This view'} could not be displayed`}
-          action={
-            <Button size="sm" onClick={() => this.setState({ error: null })}>
-              Try again
-            </Button>
-          }
-        >
-          {this.state.error.message || 'An unexpected error occurred.'}
-        </Banner>
-      </div>
+    const banner = (
+      <Banner
+        tone="danger"
+        title={`${this.props.label ?? 'This view'} could not be displayed`}
+        action={
+          <Button size="sm" onClick={() => this.setState({ error: null })}>
+            Try again
+          </Button>
+        }
+      >
+        {this.state.error.message || 'An unexpected error occurred.'}
+      </Banner>
     );
+    if (this.props.screen) return <EntryScreen title="Studio Pulse">{banner}</EntryScreen>;
+    return <div className="app-crash">{banner}</div>;
   }
 }

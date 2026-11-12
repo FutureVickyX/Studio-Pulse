@@ -28,6 +28,8 @@ pub enum ThemePreference {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GeneralSettings {
+    /// Still stored and validated so existing settings keep loading, but no longer read: the app
+    /// has one colour palette and no theme switch.
     pub theme: ThemePreference,
     pub start_minimized: bool,
     pub minimize_to_tray: bool,

@@ -244,7 +244,6 @@ fn initialise(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         sync,
     });
 
-    window_manager::apply_theme(&handle, settings.general.theme);
     let view = window_manager::startup_view(&settings, launched_at_login);
     window_manager::apply_startup_view(&handle, view);
 

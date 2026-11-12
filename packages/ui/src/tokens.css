@@ -1,12 +1,18 @@
 /*
- * Studio Pulse design tokens. Dark first; `[data-theme="light"]` on <html> switches to the light set.
- * The app resolves the `system` preference in JS and always stamps `dark` or `light`.
+ * Studio Pulse design tokens. One colour palette: there is no light theme and no theme switch.
+ *
+ * Visual direction (Figma "Studiopulse", sign in / create account): deep plum surfaces, warm cream
+ * ink, an orange accent, a maroon selected state, 4 px corners, small uppercase labels in
+ * Instrument Sans and a Redaction 35 serif for display accents. The fonts are bundled
+ * (@fontsource, OFL), never fetched (CSP).
+ *
+ * Contrast (WCAG 2.1): body text >= 7:1 and muted text >= 4.5:1 on every surface. The design's
+ * orange-on-cream button text (2.9:1) is deepened to --sp-primary-text (4.7:1); the brighter
+ * --sp-accent stays for fills, focus and text on the plum surfaces (5.6:1).
  *
  * Data-viz slots (--sp-series-*) are the validated categorical palette (dataviz skill reference
- * palette), checked against these exact card surfaces:
- *   dark  #121217: all checks pass (worst adjacent CVD dE 8.4, normal-vision 19.3, all >= 3:1)
- *   light #ffffff: passes; slots 3/4/5 sit below 3:1, so every chart that uses them carries
- *                  visible text labels or a table view (relief rule).
+ * palette). Against the card surface #200925 every slot is >= 3:1 (worst adjacent CVD dE 8.4,
+ * normal-vision 19.3).
  * Status colours are reserved for tracker state and always ship with a text label.
  */
 
@@ -14,8 +20,9 @@
   color-scheme: dark;
 
   /* Type */
-  --sp-font-ui: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
-  --sp-font-display: 'Segoe UI Variable Display', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --sp-font-ui: 'Instrument Sans Variable', 'Instrument Sans', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --sp-font-display: 'Instrument Sans Variable', 'Instrument Sans', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --sp-font-serif: 'Redaction 35', Georgia, 'Times New Roman', serif;
   --sp-font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, monospace;
   --sp-text-xs: 11px;
   --sp-text-sm: 12px;
@@ -24,6 +31,8 @@
   --sp-text-xl: 18px;
   --sp-text-2xl: 22px;
   --sp-text-3xl: 28px;
+  /* Small uppercase labels (buttons, tabs, eyebrows) */
+  --sp-caps-tracking: 0.01em;
 
   /* Spacing (4 px grid) */
   --sp-1: 4px;
@@ -34,42 +43,53 @@
   --sp-6: 24px;
   --sp-8: 32px;
 
-  /* Radius */
-  --sp-radius-sm: 6px;
-  --sp-radius-md: 8px;
-  --sp-radius-lg: 12px;
+  /* Radius: square-ish, 4 px on controls */
+  --sp-radius-sm: 2px;
+  --sp-radius-md: 4px;
+  --sp-radius-lg: 6px;
+  --sp-hairline: 0.8px;
 
   /* Motion: short state transitions only */
   --sp-duration: 140ms;
   --sp-ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* Surfaces */
-  --sp-bg: #0b0b0f;
-  --sp-surface-1: #121217;
-  --sp-surface-2: #18181f;
-  --sp-surface-3: #1f1f28;
-  --sp-surface-overlay: #1c1c24;
-  --sp-hover: rgba(255, 255, 255, 0.045);
-  --sp-pressed: rgba(255, 255, 255, 0.075);
-  --sp-border: rgba(255, 255, 255, 0.07);
-  --sp-border-strong: rgba(255, 255, 255, 0.12);
-  --sp-backdrop: rgba(4, 4, 7, 0.62);
-  --sp-shadow-pop: 0 14px 36px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --sp-bg: #0f0412;
+  --sp-surface-1: #200925;
+  --sp-surface-2: #2b142f;
+  --sp-surface-3: #361e3a;
+  --sp-surface-overlay: #26102b;
+  --sp-hover: rgba(251, 239, 230, 0.05);
+  --sp-pressed: rgba(251, 239, 230, 0.09);
+  --sp-border: rgba(251, 239, 230, 0.1);
+  --sp-border-strong: rgba(251, 239, 230, 0.2);
+  --sp-backdrop: rgba(10, 2, 12, 0.66);
+  --sp-shadow-pop: 0 12px 32px rgba(8, 1, 10, 0.55), 0 2px 6px rgba(8, 1, 10, 0.4);
 
   /* Ink */
-  --sp-text: #ededf2;
-  --sp-text-muted: #9a9aa8;
-  --sp-text-faint: #7d7d8c;
-  --sp-text-disabled: #55555f;
+  --sp-text: #fbefe6;
+  --sp-text-muted: #b1a1a4;
+  --sp-text-faint: #a39399;
+  --sp-text-disabled: #6e5b67;
 
   /* Brand */
-  --sp-accent: #ff6b3d;
-  --sp-accent-hover: #ff8257;
-  --sp-accent-text: #ff8257;
+  --sp-accent: #dd6e36;
+  --sp-accent-hover: #e8824f;
+  --sp-accent-text: #ec8a58;
   --sp-on-accent: #160803;
-  --sp-accent-soft: rgba(255, 107, 61, 0.12);
-  --sp-accent-border: rgba(255, 107, 61, 0.38);
-  --sp-focus: #ff8a5c;
+  --sp-accent-soft: rgba(221, 110, 54, 0.14);
+  --sp-accent-border: rgba(221, 110, 54, 0.42);
+  --sp-focus: #ec8a58;
+  /* Primary action: cream with orange text; hover inverts to orange with cream text */
+  --sp-primary-bg: #fbefe6;
+  --sp-primary-text: #b04d1c;
+  --sp-primary-hover-bg: #b04d1c;
+  --sp-primary-hover-text: #fbefe6;
+  /* Selected (tabs, segmented controls, current navigation) */
+  --sp-selected: #5f0726;
+  --sp-on-selected: #fbefe6;
+  /* Brand mark colour */
+  --sp-brand: #f6b89a;
 
   /* Status (reserved meaning; always paired with a label) */
   --sp-status-tracking: #3ddc97;
@@ -100,71 +120,10 @@
   --sp-series-8: #e66767;
   --sp-series-other: #6b6b78;
   /* Aggregates (all apps together) stay neutral so colour always means "which app" */
-  --sp-viz-total: #c4c4d0;
-  --sp-viz-idle: #5c5c6b;
-  --sp-viz-track: rgba(255, 255, 255, 0.04);
-  --sp-viz-grid: rgba(255, 255, 255, 0.06);
-  --sp-viz-axis: rgba(255, 255, 255, 0.14);
+  --sp-viz-total: #d8c8c4;
+  --sp-viz-idle: #6e5b67;
+  --sp-viz-track: rgba(251, 239, 230, 0.05);
+  --sp-viz-grid: rgba(251, 239, 230, 0.07);
+  --sp-viz-axis: rgba(251, 239, 230, 0.16);
   --sp-viz-gap: var(--sp-surface-1);
-}
-
-:root[data-theme='light'] {
-  color-scheme: light;
-
-  --sp-bg: #f4f4f6;
-  --sp-surface-1: #ffffff;
-  --sp-surface-2: #f6f6f8;
-  --sp-surface-3: #ececf0;
-  --sp-surface-overlay: #ffffff;
-  --sp-hover: rgba(17, 17, 26, 0.045);
-  --sp-pressed: rgba(17, 17, 26, 0.08);
-  --sp-border: rgba(17, 17, 26, 0.09);
-  --sp-border-strong: rgba(17, 17, 26, 0.15);
-  --sp-backdrop: rgba(20, 20, 28, 0.36);
-  --sp-shadow-pop: 0 14px 36px rgba(17, 17, 26, 0.16), 0 2px 6px rgba(17, 17, 26, 0.08);
-
-  --sp-text: #16161d;
-  --sp-text-muted: #5b5b68;
-  --sp-text-faint: #6f6f7d;
-  --sp-text-disabled: #a5a5b0;
-
-  --sp-accent: #ff6b3d;
-  --sp-accent-hover: #f25a2b;
-  --sp-accent-text: #c2410c;
-  --sp-on-accent: #160803;
-  --sp-accent-soft: rgba(255, 107, 61, 0.12);
-  --sp-accent-border: rgba(214, 74, 30, 0.4);
-  --sp-focus: #d94c1f;
-
-  --sp-status-tracking: #119a63;
-  --sp-status-idle: #b7790a;
-  --sp-status-paused: #71717e;
-  --sp-status-away: #4f5fe0;
-  --sp-status-danger: #d33a3a;
-  --sp-danger-text: #b42323;
-  --sp-danger-soft: rgba(211, 58, 58, 0.07);
-  --sp-danger-border: rgba(211, 58, 58, 0.3);
-  --sp-warning-text: #8a5a00;
-  --sp-warning-soft: rgba(183, 121, 10, 0.08);
-  --sp-warning-border: rgba(183, 121, 10, 0.3);
-  --sp-success-text: #0b7a4c;
-  --sp-success-soft: rgba(17, 154, 99, 0.07);
-  --sp-success-border: rgba(17, 154, 99, 0.28);
-  --sp-info-soft: rgba(79, 95, 224, 0.06);
-  --sp-info-border: rgba(79, 95, 224, 0.25);
-
-  --sp-series-1: #2a78d6;
-  --sp-series-2: #eb6834;
-  --sp-series-3: #1baf7a;
-  --sp-series-4: #eda100;
-  --sp-series-5: #e87ba4;
-  --sp-series-6: #008300;
-  --sp-series-7: #4a3aa7;
-  --sp-series-8: #e34948;
-  --sp-series-other: #9a9aa6;
-  --sp-viz-total: #3d3d4a;
-  --sp-viz-idle: #a2a2b0;
-  --sp-viz-track: rgba(17, 17, 26, 0.045);
-  --sp-viz-grid: rgba(17, 17, 26, 0.07);
-  --sp-viz-axis: rgba(17, 17, 26, 0.18);
 }

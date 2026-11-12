@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::settings::{Settings, ThemePreference};
+use crate::settings::Settings;
 
 pub const MAIN: &str = "main";
 pub const INDICATOR: &str = "indicator";
@@ -71,24 +71,6 @@ pub fn apply_startup_view<R: Runtime>(app: &AppHandle<R>, view: StartupView) {
     }
 }
 
-pub fn theme_for(preference: ThemePreference) -> Option<Theme> {
-    match preference {
-        ThemePreference::Dark => Some(Theme::Dark),
-        ThemePreference::Light => Some(Theme::Light),
-        ThemePreference::System => None,
-    }
-}
-
-/// Apply the native frame theme (title bar) to every window.
-pub fn apply_theme<R: Runtime>(app: &AppHandle<R>, preference: ThemePreference) {
-    let theme = theme_for(preference);
-    for window in app.webview_windows().values() {
-        if let Err(err) = window.set_theme(theme) {
-            log::debug!("could not set window theme: {err}");
-        }
-    }
-}
-
 pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
     let Some(window) = app.get_webview_window(MAIN) else {
         log::error!("main window missing");
@@ -127,9 +109,6 @@ fn indicator_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> 
     if let Some(window) = app.get_webview_window(INDICATOR) {
         return Some(window);
     }
-    let theme = app
-        .try_state::<crate::app_state::AppState>()
-        .and_then(|state| theme_for(state.settings().general.theme));
     let built = WebviewWindowBuilder::new(app, INDICATOR, WebviewUrl::App("index.html".into()))
         .title("Studio Pulse")
         .inner_size(INDICATOR_WIDTH, INDICATOR_HEIGHT)
@@ -142,7 +121,8 @@ fn indicator_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> 
         .shadow(true)
         .visible(false)
         .focused(true)
-        .theme(theme)
+        // One palette, so the native frame is always dark (as the main window in tauri.conf.json).
+        .theme(Some(Theme::Dark))
         .background_color(tauri::window::Color(11, 11, 15, 255))
         .build();
     match built {

@@ -83,7 +83,7 @@ export function Checkbox({ checked, onChange, label, description, disabled = fal
 // ---------------------------------------------------------------------------------------------
 
 export interface TextInputProps extends ComponentPropsWithRef<'input'> {
-  inputSize?: 'sm' | 'md';
+  inputSize?: 'sm' | 'md' | 'lg';
   mono?: boolean;
   invalid?: boolean;
 }
@@ -91,7 +91,7 @@ export interface TextInputProps extends ComponentPropsWithRef<'input'> {
 export function TextInput({ inputSize = 'md', mono = false, invalid = false, className, ...rest }: TextInputProps) {
   return (
     <input
-      className={cx('sp-input', inputSize === 'sm' && 'sp-input--sm', mono && 'sp-input--mono', className)}
+      className={cx('sp-input', inputSize !== 'md' && `sp-input--${inputSize}`, mono && 'sp-input--mono', className)}
       aria-invalid={invalid || undefined}
       {...rest}
     />

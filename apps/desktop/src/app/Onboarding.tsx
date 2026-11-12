@@ -65,7 +65,7 @@ export function Onboarding({ settings }: { settings: Settings }) {
     <div className="app-onboarding">
       <div className="app-onboarding__card" role="region" aria-label="Set up Studio Pulse">
         <header className="app-onboarding__header">
-          <BrandMark size={28} />
+          <BrandMark size={44} />
           <ol className="app-steps" aria-label="Setup steps">
             {STEPS.map((item, itemIndex) => (
               <li
@@ -102,19 +102,21 @@ export function Onboarding({ settings }: { settings: Settings }) {
         <InlineError error={finishError} />
         <footer className="app-onboarding__footer">
           {index > 0 ? (
-            <Button variant="ghost" icon={<IconChevronLeft size={14} />} disabled={finishing} onClick={() => go(-1)}>
+            <Button variant="ghost" size="lg" icon={<IconChevronLeft size={14} />} disabled={finishing} onClick={() => go(-1)}>
               Back
             </Button>
           ) : (
             <span />
           )}
           {step === 'finish' ? (
-            <Button variant="primary" pending={finishing} onClick={() => void finish()}>
+            <Button variant="primary" size="lg" className="app-onboarding__next" pending={finishing} onClick={() => void finish()}>
               Start tracking
             </Button>
           ) : (
             <Button
               variant="primary"
+              size="lg"
+              className="app-onboarding__next"
               iconAfter={<IconChevronRight size={14} />}
               disabled={step === 'applications' && !applications.data}
               onClick={() => go(1)}

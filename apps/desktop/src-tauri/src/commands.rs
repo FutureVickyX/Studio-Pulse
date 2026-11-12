@@ -174,9 +174,6 @@ pub fn update_settings(
     state
         .tracker
         .request(|reply| TrackerCommand::SettingsChanged { reply });
-    if next.general.theme != current.general.theme {
-        window_manager::apply_theme(&app, next.general.theme);
-    }
     let _ = app.emit(EVENT_SETTINGS_CHANGED, &next);
     Ok(next)
 }

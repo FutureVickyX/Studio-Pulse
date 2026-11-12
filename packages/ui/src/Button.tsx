@@ -14,7 +14,7 @@ export function Spinner({ size = 12, label }: { size?: number; label?: string })
 }
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-export type ButtonSize = 'sm' | 'md';
+export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends ComponentPropsWithRef<'button'> {
   variant?: ButtonVariant;
@@ -46,7 +46,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={cx('sp-btn', `sp-btn--${variant}`, size === 'sm' && 'sp-btn--sm', className)}
+      className={cx('sp-btn', `sp-btn--${variant}`, size !== 'md' && `sp-btn--${size}`, className)}
       disabled={disabled}
       aria-disabled={busy || undefined}
       aria-busy={pending || undefined}

@@ -3,6 +3,11 @@
  * a 2 px surface gap between touching fills, hairline solid grid, text in text tokens only.
  * `--c` carries the series colour of a mark; idle time is drawn as a 135 deg hatch of the same
  * colour so active/idle never relies on colour alone.
+ *
+ * Type: labels (stat labels, category axis labels) are small uppercase; values, durations, times
+ * and names (applications, projects) keep their case and use tabular figures. Axis and tick text
+ * is --sp-text-faint (6.3:1 on --sp-surface-1); readouts sit on --sp-surface-overlay (cream 15.6:1,
+ * muted 7.1:1, faint 6.0:1).
  */
 
 .sp-fill {
@@ -28,14 +33,15 @@
   gap: var(--sp-3);
 }
 
+/* A flat tile like the cards (transparent border: visible only in forced colours). */
 .sp-stat {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  padding: 12px 14px 13px;
-  border-radius: var(--sp-radius-lg);
-  border: 1px solid var(--sp-border);
+  padding: 14px 16px;
+  border-radius: 0;
+  border: var(--sp-hairline) solid transparent;
   background: var(--sp-surface-1);
 }
 
@@ -43,16 +49,26 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   font-size: var(--sp-text-sm);
   font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 100;
   color: var(--sp-text-muted);
 }
 
+.sp-stat__label svg {
+  flex: none;
+}
+
 .sp-stat__value {
-  font-family: var(--sp-font-display);
+  font-family: var(--sp-font-ui);
   font-size: var(--sp-text-3xl);
   font-weight: 600;
-  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   line-height: 1.1;
   color: var(--sp-text);
   white-space: nowrap;
@@ -62,6 +78,7 @@
 
 .sp-stat__meta {
   font-size: var(--sp-text-sm);
+  font-variant-numeric: tabular-nums;
   color: var(--sp-text-faint);
   min-height: 17px;
 }
@@ -74,11 +91,12 @@
 /* Legend & swatches                                                                          */
 /* ------------------------------------------------------------------------------------------ */
 
+/* Legend entries are usually application names (user data), so they keep their case. */
 .sp-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 14px;
+  gap: 4px 16px;
   font-size: var(--sp-text-sm);
   color: var(--sp-text-muted);
 }
@@ -95,7 +113,7 @@
   flex: none;
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: var(--sp-radius-sm);
 }
 
 .sp-swatch--line {
@@ -121,14 +139,18 @@
   max-width: 260px;
   padding: 8px 10px;
   border-radius: var(--sp-radius-md);
-  border: 1px solid var(--sp-border-strong);
+  border: var(--sp-hairline) solid var(--sp-border-strong);
   background: var(--sp-surface-overlay);
   box-shadow: var(--sp-shadow-pop);
+  color: var(--sp-text);
   pointer-events: none;
   font-size: var(--sp-text-sm);
+  line-height: 1.35;
 }
 
+/* The title names the mark (an application, a day): its own case, 13 px 600. */
 .sp-chart-tip__title {
+  font-size: var(--sp-text-md);
   font-weight: 600;
   color: var(--sp-text);
   margin-bottom: 2px;
@@ -212,7 +234,7 @@
   display: flex;
   align-items: center;
   height: 8px;
-  border-radius: 2px;
+  border-radius: var(--sp-radius-sm);
   background: var(--sp-viz-track);
   min-width: 0;
 }
@@ -368,8 +390,17 @@
 .sp-columns__ylabel,
 .sp-columns__xlabel {
   fill: var(--sp-text-faint);
-  font-size: 11px;
+  font-family: var(--sp-font-ui);
+  font-size: var(--sp-text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Category labels (weekday names, day numbers) read as labels; the y values are durations and
+   keep their case ("2h", not "2H"). */
+.sp-columns__xlabel {
+  font-weight: 500;
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase;
 }
 
 .sp-columns__primary {
@@ -405,7 +436,7 @@
 
 .sp-columns:focus-visible {
   outline-offset: 4px;
-  border-radius: 4px;
+  border-radius: var(--sp-radius-md);
 }
 
 .sp-chart-tip__row {
@@ -417,7 +448,7 @@
   width: 64%;
   height: 28px;
   margin: 2px 0 1px;
-  border-radius: 6px;
+  border-radius: var(--sp-radius-sm);
 }
 
 /* Refetch keeps the frame: the previous render stays, dimmed, with no layout jump. */

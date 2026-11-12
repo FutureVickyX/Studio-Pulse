@@ -1,14 +1,8 @@
-import type { Settings, ThemePreference } from '@studio-pulse/shared-types';
-import { Badge, Card, SegmentedControl } from '@studio-pulse/ui';
-import { InlineError, SettingRow } from '../../components/common';
+import type { Settings } from '@studio-pulse/shared-types';
+import { Badge, Card } from '@studio-pulse/ui';
+import { SettingRow } from '../../components/common';
 import { useStartupStatus } from '../../hooks/useStartupStatus';
 import { LaunchAtLoginSetting, SwitchSetting, useSettingsPatcher } from './shared';
-
-const THEMES = [
-  { value: 'dark', label: 'Dark' },
-  { value: 'light', label: 'Light' },
-  { value: 'system', label: 'System' },
-] as const;
 
 export function GeneralSettings({ settings }: { settings: Settings }) {
   const patcher = useSettingsPatcher();
@@ -17,26 +11,6 @@ export function GeneralSettings({ settings }: { settings: Settings }) {
 
   return (
     <>
-      <Card title="Appearance">
-        <SettingRow
-          title="Theme"
-          description="System follows the Windows light or dark setting."
-          control={() => (
-            // The radiogroup names itself; a `role="presentation"` wrapper can't carry a name.
-            <SegmentedControl<ThemePreference>
-              aria-label="Theme"
-              options={THEMES}
-              value={general.theme}
-              // Not disabled while saving: arrow keys move the selection, and disabling the
-              // radios under the keyboard focus would drop it. The value shown is the confirmed one.
-              onChange={(theme) => void patcher.apply('theme', { general: { theme } })}
-            />
-          )}
-        >
-          <InlineError error={patcher.errorFor('theme')} />
-        </SettingRow>
-      </Card>
-
       <Card title="Startup and window">
         <LaunchAtLoginSetting startup={startup} />
         <SwitchSetting

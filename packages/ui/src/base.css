@@ -65,8 +65,9 @@ a {
   color: var(--sp-accent-text);
 }
 
+/* 40 % orange: visible on every plum surface; cream over it is >= 7.2:1 (on --sp-surface-3). */
 ::selection {
-  background: var(--sp-accent-soft);
+  background: color-mix(in srgb, var(--sp-accent) 40%, transparent);
   color: var(--sp-text);
 }
 
@@ -74,15 +75,40 @@ a {
   outline: none;
 }
 
+/* Orange focus ring: >= 5.9:1 against every surface, 5.4:1 against the maroon selected fill. */
 :focus-visible {
   outline: 2px solid var(--sp-focus);
   outline-offset: 2px;
 }
 
-/* Quiet scrollbars that still show position */
+/* Quiet scrollbars that still show position: a 20 % cream thumb on no track. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--sp-border-strong) transparent;
+}
+
+/* Browsers without scrollbar-color (Safari) get the same thumb through the WebKit pseudo-elements;
+   Chromium (WebView2) ignores these once scrollbar-color applies. */
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: var(--sp-radius-md);
+    background: var(--sp-border-strong) padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--sp-text) 32%, transparent);
+  }
 }
 
 .sp-num {
@@ -101,6 +127,20 @@ a {
 
 .sp-faint {
   color: var(--sp-text-faint);
+}
+
+/* A small uppercase UI label (eyebrows, table headers, section titles): 12 px 500. */
+.sp-caps {
+  font-size: var(--sp-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase !important;
+  font-variation-settings: 'wdth' 100;
+}
+
+/* Explicit casing utilities must beat component rules loaded later, including on the same node. */
+.sp-keep-case {
+  text-transform: none !important;
 }
 
 .sp-visually-hidden {

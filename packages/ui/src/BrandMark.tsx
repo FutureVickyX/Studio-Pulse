@@ -1,36 +1,23 @@
-/** The Studio Pulse mark: a coral pulse line on a near-black tile (same geometry as the app icon). */
+import logoUrl from './assets/logo.svg';
+
+/** The logo's own proportions (Figma "Logo", 113.985 × 77.2158). */
+const LOGO_RATIO = 113.985 / 77.2158;
+
+/**
+ * The Studio Pulse mark (the Figma logo asset). `size` is its height; the width follows the logo's
+ * proportions, drawn as is.
+ */
 export function BrandMark({ size = 24, title }: { size?: number; title?: string }) {
+  const width = Math.round(size * LOGO_RATIO * 100) / 100;
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 1024 1024"
+    <span
+      className="sp-brandmark"
       role={title ? 'img' : undefined}
       aria-label={title}
       aria-hidden={title ? undefined : true}
-      focusable="false"
-      className="sp-brandmark"
+      style={{ width, height: size }}
     >
-      <rect x="32" y="32" width="960" height="960" rx="224" fill="#16161c" />
-      <rect
-        x="32.5"
-        y="32.5"
-        width="959"
-        height="959"
-        rx="223.5"
-        fill="none"
-        stroke="#ffffff"
-        strokeOpacity="0.12"
-        strokeWidth="16"
-      />
-      <polyline
-        points="196,540 372,540 446,356 548,708 628,300 690,540 828,540"
-        fill="none"
-        stroke="#ff6b3d"
-        strokeWidth="84"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+      <img className="sp-brandmark__img" src={logoUrl} alt="" width={width} height={size} draggable={false} />
+    </span>
   );
 }

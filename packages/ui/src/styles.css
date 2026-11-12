@@ -1,4 +1,7 @@
-/* @studio-pulse/ui: import once at the app root. No remote fonts or assets (CSP). */
+/* @studio-pulse/ui: import once at the app root. No remote fonts or assets (CSP): the fonts are
+   bundled from @fontsource (OFL) and served from the app itself. */
+@import '@fontsource-variable/instrument-sans/standard.css';
+@import '@fontsource/redaction-35/400.css';
 @import './tokens.css';
 @import './base.css';
 @import './components.css';

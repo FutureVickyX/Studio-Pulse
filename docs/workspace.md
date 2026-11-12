@@ -22,8 +22,8 @@ the desktop build links to a workspace (§3.3).
 | **Notes** | Personal (private) and shared notes, filtered by scope, project and archived; search by title and text. The editor autosaves (§5.2). Owners share or unshare, move to a project, pin, archive and delete. |
 | **Time** | Your synced desktop sessions for Today, Yesterday, 7 days or 30 days, with active and foreground totals overall and by project; filter by application to see one application's totals. Select sessions and attribute them to a project and optionally a task, or clear the attribution. |
 
-The layout is a sidebar on desktop widths and a top bar with a slide-over menu at 760 px and below. It follows the system's
-light or dark preference (dark first) and uses `@studio-pulse/ui`, the same tokens and
+The layout is a sidebar on desktop widths and a top bar with a slide-over menu at 760 px and below. It has one colour
+palette (no light or dark switch) and uses `@studio-pulse/ui`, the same tokens and
 primitives as the desktop app.
 
 ## 2. Run it locally

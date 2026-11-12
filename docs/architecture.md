@@ -399,6 +399,9 @@ tracking: { enabled: true, startAutomatically: true, pauseWhenIdle: true,
 onboarding: { completed: false, completedAt: null }
 ```
 
+`general.theme` is still stored and validated, so existing settings keep loading, but nothing reads
+it: the app has one colour palette and no theme switch.
+
 - **Tracking starts only after onboarding**, where the user sees what is and isn't tracked and
   picks the applications to monitor.
 - `pauseWhenIdle = false` disables idle detection. Time without input then counts as active, which
@@ -435,8 +438,9 @@ field, row counts, the database location, export (JSON/CSV) and deletion. See `d
   resolution, local-day splitting (DST-safe), per-app, per-category and per-day totals,
   percentages and trends are all pure functions, unit-tested, and reused by the Phase-2 web
   dashboard.
-- `@studio-pulse/ui` holds design tokens (CSS variables, dark first) and primitives. Fonts are
-  Windows system faces (Segoe UI Variable, Cascadia Mono), so nothing is fetched at runtime.
+- `@studio-pulse/ui` holds design tokens (CSS variables, one colour palette) and primitives. The
+  UI fonts (Instrument Sans, Redaction 35) are bundled from @fontsource (OFL) and the mono face is
+  Windows' Cascadia Mono, so nothing is fetched at runtime.
 - Navigation: Home, Tasks†, Notes†, Projects†, Time, Team, Settings. †Opens the team workspace
   in the browser when the build links to one (otherwise shown disabled with an explanation). Team
   opens Settings › Workspace. Keyboard: `Ctrl+1…7` goes to each section (Ctrl+2, 3, 4 open the
