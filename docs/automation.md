@@ -37,6 +37,9 @@ Apply the existing migrations in order, including Phase 3A's
    hashes; event triggers and service-only worker operations.
 2. `20261112120100_automation_scheduling.sql`: bounded calendar planner, comment activity,
    settings invalidation, and notifications in the existing Realtime publication.
+3. `20261112120200_automation_scheduler_extensions.sql`: optional hosting extensions and queue
+   access restrictions. Portable test databases without these extensions skip them; no job is
+   activated until the explicit installer runs.
 
 RLS requires both the addressed user and active workspace membership to read notifications.
 Authenticated clients can update only `read_at`. They cannot insert or delete system notices,
@@ -87,7 +90,7 @@ select vault.create_secret(
 ```
 
 Run [install-scheduler.sql](../supabase/automation/install-scheduler.sql) as the database operator.
-It installs `pg_cron`/`pg_net`, generates the limited key inside the database, stores it in Vault,
+After migration 13 makes `pg_cron`/`pg_net` available, it generates the limited key inside the database, stores it in Vault,
 registers its hash and installs the named job `studio-pulse-automation`, once per minute.
 Rerunning replaces the same job rather than adding a second schedule. It requires no extra Edge
 secret or paid delivery service. Revoke old hashes when deliberately rotating the Vault key;

@@ -19,7 +19,8 @@ Base: `db068eb` (clean checkout), fast-forwarded to Phase 3A commit `7897fdd` on
   security was verified in the catalog.
 - The Supabase connector became available during implementation. The development database woke
   from hibernation after an application request. New automation migration requests require a
-  separate Supabase confirmation. Public configuration exists in ignored env files; no
+  separate Supabase confirmation, subsequently completed. Migrations 10-13, the worker and the
+  development scheduler are deployed. Public configuration exists in ignored env files; no
   privileged credential is needed in either frontend.
 
 ## Ordered slices

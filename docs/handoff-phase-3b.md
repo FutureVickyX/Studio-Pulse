@@ -5,23 +5,24 @@ Date: 15 November 2026. Branch: `feat/phase-3b-automation`, isolated worktree
 
 ## Delivery status
 
-The implementation is built and locally verified. **Hosted automation acceptance is pending
-Supabase's separate deployment confirmation.** Earlier automation migration requests expired
-without applying; they were not treated as successful. No scheduler is claimed operational.
-Phase 3A migration 10 **was applied** to `studio-pulse-dev` and its `SECURITY INVOKER` property
-was verified in the hosted catalog. The other Supabase project was not modified.
+The implementation is built and verified on **studio-pulse-dev**. Supabase's deployment
+confirmation completed: migrations 10–13 are applied, Edge worker version 1 is active, and the
+named minutely cron job has successful runs, HTTP 200 responses and confirmed deliveries.
+Phase 3A's missing analytics migration is applied; its `SECURITY INVOKER` property was verified
+in the hosted catalog. The other Supabase project was not modified. This is verification of
+the development deployment, not a claim that a separate production environment was deployed.
 
 ## Changes and reused systems
 
 | Area | Files |
 | --- | --- |
 | Database models and validation | `packages/database/src/automation.ts`, `types.ts`, `schema.ts`, `index.ts` |
-| Ordered migrations | `supabase/migrations/20261112120000_automation_foundation.sql`, `20261112120100_automation_scheduling.sql` |
+| Ordered migrations | `supabase/migrations/20261112120000_automation_foundation.sql`, `20261112120100_automation_scheduling.sql`, `20261112120200_automation_scheduler_extensions.sql` |
 | Server worker and personal reports | `server/automation/entry.ts`, `worker.ts`, `digest.ts` |
 | Deployment | `scripts/build-automation-worker.mjs`, `supabase/config.toml`, `supabase/automation/install-scheduler.sql`, `verify-scheduler.sql`, root `package.json`, `.gitignore` |
 | Client data/refresh | `apps/web/src/lib/automation.ts`, `apps/web/src/app/automation.ts` |
 | Interface | `apps/web/src/views/NotificationsView.tsx`, `AutomationView.tsx`, `app/App.tsx`, `app/Shell.tsx`, `lib/router.ts`, `styles/web.css`, shared `icons.tsx` |
-| Tests | `tests/integration/supabase/automation.test.ts`, `anon.test.ts`, `privileges.test.ts`, `harness.ts`; `tests/unit/web/automation.test.ts`, `automation-views.test.ts` |
+| Tests | `tests/integration/supabase/automation.test.ts`, `anon.test.ts`, `privileges.test.ts`, `harness.ts`; `tests/unit/web/automation.test.ts`, `automation-views.test.ts`; `tests/live/automation.live.test.ts`, `workspace.live.test.ts`, live README |
 | Documentation | `docs/automation.md`, `phase-3b-plan.md`, this report; README, architecture, privacy, Supabase setup and testing docs |
 
 Reused: Supabase identity and membership roles, existing RLS helpers and client factory,
@@ -64,6 +65,13 @@ reporting and other workspace policies were not widened.
 | Self-contained Edge worker build/bootstrap | Passed; no unresolved imports; unconfigured bootstrap safely returned 503 |
 | Worker bundle credential-pattern scan | Passed; no credential leaks |
 | Production app in isolated Chrome, 1280 px and 390 px | Sign-in screen rendered, labels present, no horizontal overflow or runtime exception |
+| Real signed-in Chrome at both widths | Notifications, summary reading, personal preferences and Analytics loaded authorized server records; no horizontal overflow or runtime exceptions |
+| Hosted automation tests | **5 passed across two runs**: four scheduled/privacy/reporting/security checks, plus one focused concurrent-worker check (the other four were intentionally filtered in that second run) |
+| Concurrent trusted worker HTTP requests | Both returned 200, completing 10 and 6 jobs with zero failures; twelve burst tasks each received one unique assignment notice |
+| Scheduler with no desktop/browser trigger | Repeated cron runs succeeded; HTTP returned 200; assignment, due-today, daily and weekly notifications were confirmed in the database |
+| Hosted digest equality | Both daily/weekly foreground, active and idle totals matched the authenticated Phase 3A RPC, including a two-device overlap and unassigned time |
+| Latest optional-extension migration | Applied on hosted PostgreSQL; the local automation suite reran **19/19 passed** |
+| Older seven-test workspace live regression suite | **Not passed**: setup was blocked by hosted Auth 504 `request_timeout` / context-deadline errors; no assertions ran. Sequential fixture sign-in did not resolve it. Existing local workspace regressions passed in the full suite |
 | Adversarial test mutation | Removing recipient isolation caused the privacy test to fail; original policy restored |
 | Hosted Phase 3A migration | Applied; catalog confirms invoker execution |
 
@@ -73,24 +81,37 @@ passed. No assertion was removed or test skipped to obtain that result. There is
 JavaScript lint command in this repository; strict type checks and the existing Rust lint gate
 were run. Timing measurements are not used to claim a performance improvement or regression.
 
-## Remaining hosted verification and configuration
+Hosted advisors were reviewed. Five private-table “RLS enabled, no policy” informational findings
+are intentional default denial, verified by privilege tests. Nine signed-in definer RPC warnings
+include the existing membership operations and the explicitly admin-authorized outcome report;
+none of the worker RPCs is granted to ordinary users. See the
+[definer-function advisory](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
+The remaining Auth setting is
+[leaked-password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection),
+which must be enabled in the dashboard where the plan supports it. Performance advisors reported
+only unused-index information on this almost-empty development database; no index was removed.
 
-Supabase requires confirmation to apply migrations 11/12. After approval:
+## Hosted setup and remaining manual checks
 
-1. Apply both migrations in order and record their repository versions in migration history.
-2. Deploy the generated Edge function, preserving its custom authentication mode.
-3. Set the public project URL in Vault and run the idempotent scheduler installer. It generates
-   a limited key internally; no additional Edge secret or client environment variable is needed.
-4. Create dedicated throwaway users/workspaces and test authenticated direct API isolation,
-   assignment/review/read state, reminders, personal daily/weekly digest totals, true concurrent
-   claims and scheduled HTTP delivery with desktop/browser clients closed.
-5. Verify cron execution **and** HTTP 200 **and** a confirmed notification. Then remove test
-   users/data. No throwaway hosted users or workspaces were created during the local-only checks.
+The development project has migrations recorded under their repository versions, the deployed
+worker, Vault URL/limited credential/hash, and the active `studio-pulse-automation` schedule.
+No additional client key or manually supplied Edge secret was required. Signed-in checks used
+three disposable confirmed accounts and server-backed records. A scoped cleanup request for
+those accounts/workspaces is pending confirmation; it is not reported successful without a
+database response and a zero-count verification.
 
-Signed-in hosted notification workflows, genuine concurrent PostgreSQL claims, actual digest
-totals against the hosted analytics RPC and a scheduled Edge execution remain **unexecuted**.
+The older workspace live suite should be rerun when Auth is healthy. Its later setup timeouts do
+not invalidate the earlier five passing automation checks or signed-in browser checks, but the
+broader live regression acceptance remains incomplete. No retries or suppressed assertions were
+added to make that suite appear green.
+
+For another environment, follow [automation.md](automation.md): apply migrations, build/deploy
+the worker, set the public URL in Vault, run the installer and require cron success, HTTP 200 and
+an actual recipient notification before calling it active. Existing web hosting remains a separate
+deployment; no hosting provider or paid delivery channel was introduced.
+
 The real Windows startup/reboot, sleep and target-app manual checklist was not rerun; native
-foreground/idle checks and all regression tests passed, and those implementations are unchanged.
+foreground/idle checks and all local regression tests passed, and those implementations are unchanged.
 
 ## Limits and next step
 
@@ -102,6 +123,7 @@ do not backfill missed days and do not rewrite themselves for late offline uploa
 is capped at 20 items, project progress at 100; overlarge time inputs fail rather than silently
 truncate. Retention and deliberate failed-job replay remain trusted operator actions.
 
-The next step is the hosted acceptance sequence above. After that, consider optional consented
-external delivery and retention tooling, keeping application time distinct from billable work.
+The next step is review/merge of the feature branch and deployment of the updated static web
+bundle to the chosen workspace host. Later consider optional consented external delivery and
+retention tooling, keeping application time distinct from billable work.
 Full setup and manual workflow steps are in [automation.md](automation.md).

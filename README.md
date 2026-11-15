@@ -12,8 +12,8 @@ application name and timing is collected.
 > **Status: Phase 1 (desktop tracking), Phase 2A (Supabase accounts, workspaces, RLS and desktop
 > sync), Phase 2B (the team workspace: projects, tasks, notes and time attribution, in
 > `apps/web`) and Phase 3A (analytics in the workspace: an Analytics page and project
-> Insights), plus Phase 3B automation code (notifications, reminders and personal summaries;
-> hosting requires separate deployment and verification).** The desktop app runs on Windows
+> Insights), plus Phase 3B (notifications, reminders and personal summaries; the development
+> scheduler is deployed and verified).** The desktop app runs on Windows
 > 10/11; the workspace runs in any modern browser.
 > Quick capture, manual time entries and billable time are not built yet. macOS and Linux
 > desktops are not supported.

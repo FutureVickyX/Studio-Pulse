@@ -61,6 +61,7 @@ Migrations live in `supabase/migrations/` and run in filename order:
 | `20261112090000_analytics.sql` | Phase 3A. The read-only `analytics_time_summary` RPC: time totals by day, week or month, member, project, task and application, added up on the server. `SECURITY INVOKER`, so RLS decides whose time counts. No table, policy, index or grant on data changes |
 | `20261112120000_automation_foundation.sql` | Phase 3B. Recipient-private notifications/preferences, administrator workspace switches, private jobs/leases/attempts, task event triggers and service-only worker operations |
 | `20261112120100_automation_scheduling.sql` | Phase 3B. Calendar planner, quiet hours, date-only deadlines, digest occurrences, comment activity and notification Realtime |
+| `20261112120200_automation_scheduler_extensions.sql` | Phase 3B. Enables available hosting extensions (`pg_cron`, `pg_net`) and restricts HTTP queue access; creates no schedule or credential |
 
 Phase 3B hosting is a separate explicit step: [automation.md](automation.md). The client needs
 no new key. The Edge worker uses its built-in server credential; cron uses a limited key generated
