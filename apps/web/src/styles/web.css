@@ -1560,3 +1560,415 @@ button.web-row:hover .web-row__title {
     transition: none;
   }
 }
+
+/* ---- Analytics -------------------------------------------------------------------------- */
+
+/* Filters above the charts: one row that wraps; each group stays together. */
+.web-analytics-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.web-analytics-toolbar__range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.web-analytics-toolbar__presets {
+  max-width: 100%;
+}
+
+.web-analytics-toolbar__dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sp-text-faint);
+}
+
+.web-analytics-toolbar__text,
+.web-analytics-updated {
+  color: var(--sp-text-faint);
+  font-size: var(--sp-text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.web-analytics-toolbar__error {
+  flex-basis: 100%;
+  color: var(--sp-danger-text);
+  font-size: var(--sp-text-sm);
+}
+
+/* Four tiles, or two rows of two: never three and an orphan. */
+.sp-stats.web-analytics-tiles {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.web-analytics-tiles .sp-stat__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The previous period's total: a reference, in the same quiet text as the note above it. */
+.web-analytics-ref {
+  color: var(--sp-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-analytics-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sp-radius-sm);
+  background: none;
+  color: var(--sp-text-faint);
+  vertical-align: middle;
+}
+
+.web-analytics-info:hover {
+  color: var(--sp-text);
+  background: var(--sp-hover);
+}
+
+.web-analytics-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 760px;
+  color: var(--sp-text-muted);
+  font-size: var(--sp-text-sm);
+}
+
+.web-analytics-note__icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--sp-text-faint);
+}
+
+.web-analytics-footnote {
+  max-width: 900px;
+}
+
+.web-analytics-card-link {
+  margin-top: 12px;
+  font-size: var(--sp-text-sm);
+}
+
+.web-analytics-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.web-analytics-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.web-analytics-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.web-analytics-task-link {
+  color: var(--sp-text);
+  text-decoration: none;
+}
+
+.web-analytics-task-link:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* Task progress: counts per status, then the two date counts. */
+.web-analytics-status {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.web-analytics-status--dates {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: 12px;
+  border-top: var(--sp-hairline) solid var(--sp-border);
+}
+
+.web-analytics-status div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.web-analytics-status dt {
+  color: var(--sp-text-faint);
+  font-size: var(--sp-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 100;
+}
+
+.web-analytics-status dd {
+  margin: 0;
+  font-family: var(--sp-font-ui);
+  font-size: var(--sp-text-xl);
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Report settings dialog */
+.web-analytics-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.web-analytics-settings__views {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.web-analytics-settings__views > .web-rows,
+.web-analytics-settings__form {
+  align-self: stretch;
+}
+
+.web-analytics-settings__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.web-analytics-settings__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Project Insights: a full-width section under the project's two columns. */
+.web-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.web-insights__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.web-insights__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--sp-text-sm);
+}
+
+/* ---- Tables ----------------------------------------------------------------------------- */
+
+/* Wide tables scroll inside their card, not the page. */
+.web-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.web-table-wrap:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+.web-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sp-text-sm);
+  transition: opacity var(--sp-duration) var(--sp-ease);
+}
+
+.web-table[data-stale='true'] {
+  opacity: 0.6;
+}
+
+.web-table caption {
+  padding-bottom: 8px;
+  color: var(--sp-text-muted);
+  font-size: var(--sp-text-sm);
+  text-align: left;
+  caption-side: top;
+}
+
+.web-table th,
+.web-table td {
+  padding: 8px 12px;
+  border-bottom: var(--sp-hairline) solid var(--sp-border);
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.web-table th:first-child,
+.web-table td:first-child {
+  padding-left: 0;
+}
+
+.web-table th:last-child,
+.web-table td:last-child {
+  padding-right: 0;
+}
+
+.web-table thead th {
+  color: var(--sp-text-faint);
+  font-size: var(--sp-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--sp-caps-tracking);
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 100;
+  white-space: nowrap;
+}
+
+.web-table tbody th {
+  min-width: 140px;
+  color: var(--sp-text);
+  font-weight: 500;
+}
+
+.web-table tbody td {
+  color: var(--sp-text-muted);
+}
+
+.web-table tbody tr:last-child th,
+.web-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.web-table tfoot th,
+.web-table tfoot td {
+  border-top: var(--sp-hairline) solid var(--sp-border-strong);
+  border-bottom: 0;
+  color: var(--sp-text);
+  font-weight: 600;
+}
+
+.web-table .web-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 760–1100px: the card pairs are already one column (.web-grid-2); tiles go two by two. */
+@media (max-width: 1100px) {
+  .sp-stats.web-analytics-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  /* One group per row. Single-line: a wrapping column sizes its groups to their widest content
+     (here the presets, ~440 px), not to the page, which pushed them past a phone's edge. */
+  .web-analytics-toolbar {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+
+  .web-analytics-toolbar__range,
+  .web-filters {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Five presets do not fit a phone: they wrap onto a second row, each still a whole button, so
+     every one (Custom included) stays in view and in reach. */
+  .sp-seg.web-analytics-toolbar__presets {
+    flex-wrap: wrap;
+    height: auto;
+    overflow-x: visible;
+  }
+
+  .web-analytics-toolbar__presets .sp-seg__item {
+    flex: 1 1 auto;
+    min-height: 24px;
+  }
+
+  .web-analytics-toolbar__text {
+    white-space: normal;
+  }
+
+  /* Bars: the name gets the row's width (above its bar) instead of a third of it, so names such
+     as "No project (task time)" read whole. Desktop layout and the shared BarList are unchanged. */
+  .web-analytics-bars .sp-barlist__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name value'
+      'track track';
+    row-gap: 6px;
+    padding-block: 6px;
+  }
+
+  .web-analytics-bars .sp-barlist__name {
+    grid-area: name;
+  }
+
+  .web-analytics-bars .sp-barlist__label {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .web-analytics-bars .sp-barlist__track {
+    grid-area: track;
+  }
+
+  .web-analytics-bars .sp-barlist__value {
+    grid-area: value;
+    align-self: start;
+  }
+
+  .web-analytics-status {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .web-analytics-status--dates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .web-analytics-status dd {
+    font-size: var(--sp-text-lg);
+  }
+
+  .web-table th,
+  .web-table td {
+    padding: 8px;
+  }
+
+  .web-table tbody th {
+    min-width: 112px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-table {
+    transition: none;
+  }
+}

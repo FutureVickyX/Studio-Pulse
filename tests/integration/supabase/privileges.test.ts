@@ -157,6 +157,7 @@ const POLICY_COMMANDS: Record<Table, string[]> = {
 /** Functions in `public` that `authenticated` may execute: exactly the RPCs. */
 const AUTHENTICATED_FUNCTIONS = [
   'accept_invitation',
+  'analytics_time_summary',
   'create_invitation',
   'create_workspace',
   'my_workspaces',

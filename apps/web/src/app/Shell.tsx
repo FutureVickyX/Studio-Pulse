@@ -6,6 +6,7 @@ import {
   BrandMark,
   Button,
   IconButton,
+  IconChart,
   IconClock,
   IconClose,
   IconHome,
@@ -24,6 +25,7 @@ import { watchWorkspace } from '../lib/realtime';
 import { formatRoute, sectionOf } from '../lib/router';
 import type { Route, Section } from '../lib/router';
 import { Avatar, ProblemBanner } from '../components/common';
+import { AnalyticsView } from '../views/AnalyticsView';
 import { NotesView } from '../views/NotesView';
 import { OverviewView } from '../views/OverviewView';
 import { ProjectDetailView } from '../views/ProjectDetailView';
@@ -39,6 +41,7 @@ const NAV: ReadonlyArray<{ section: Section; label: string; icon: ReactNode; rou
   { section: 'tasks', label: 'Tasks', icon: <IconTasks size={16} />, route: { name: 'tasks', view: 'mine' } },
   { section: 'notes', label: 'Notes', icon: <IconNotes size={16} />, route: { name: 'notes', id: null } },
   { section: 'time', label: 'Time', icon: <IconClock size={16} />, route: { name: 'time' } },
+  { section: 'analytics', label: 'Analytics', icon: <IconChart size={16} />, route: { name: 'analytics' } },
 ];
 
 export function Shell({ membersProblem, onRetryMembers }: { membersProblem: Problem | null; onRetryMembers: () => void }) {
@@ -100,6 +103,8 @@ function Page({ route }: { route: Route }) {
       return <NotesView noteId={route.id} />;
     case 'time':
       return <TimeView />;
+    case 'analytics':
+      return <AnalyticsView />;
   }
 }
 

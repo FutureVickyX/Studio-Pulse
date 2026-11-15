@@ -1,4 +1,4 @@
-# Studio Pulse — Supabase backend (Phases 2A and 2B)
+# Studio Pulse — Supabase backend (Phases 2A, 2B and 3A)
 
 Phase 2A adds team identity, a workspace-scoped Postgres schema protected by Row Level Security,
 and reliable upload of the intervals the desktop tracker records locally. The tracker, idle
@@ -10,6 +10,10 @@ schema: project leads, dates and statuses, task checklists and comments, shared 
 edit, version-based conflict detection, and attribution of synced time to projects and tasks. It
 is one additive migration. Nothing from Phase 2A was replaced, and no access to data that was
 protected before was widened.
+
+Phase 3A adds one read-only reporting function for the workspace's Analytics page and project
+Insights (migration 10, [§5](#analytics-phase-3a-migration-10)). It runs as the caller under RLS;
+nothing else changes.
 
 ## 1. Set up a project
 
@@ -54,6 +58,7 @@ Migrations live in `supabase/migrations/` and run in filename order:
 | `20261017090600_text_bounds.sql` | Names, titles and uploaded application names are stored trimmed, so their length limits bound the stored value; invitation emails are capped at 320 characters |
 | `20261024090000_workspace_collaboration.sql` | Phase 2B. Project statuses (planning, on hold, completed), lead, start and due dates; `version` on projects and tasks; `task_subtasks` and `task_comments`; shared notes editable by members (sharing, project, pin and archive stay owner-only); `archived_at` on notes; time attribution (`set_time_entry_attribution`); deletion guards that keep history; client-supplied ids for idempotent creates; the shared tables join `supabase_realtime` |
 | `20261029090000_collaboration_fixes.sql` | Phase 2B review fixes. A project's lead and a task's assignee are validated when they change, so a project or task that still names a former member stays editable by those allowed to edit it. Moving a task to another project moves its tracked time with it (refused into an archived project) |
+| `20261112090000_analytics.sql` | Phase 3A. The read-only `analytics_time_summary` RPC: time totals by day, week or month, member, project, task and application, added up on the server. `SECURITY INVOKER`, so RLS decides whose time counts. No table, policy, index or grant on data changes |
 
 ```bash
 npm run supabase:migrate:status
@@ -233,6 +238,28 @@ configured in this build. Debug builds also read the two variables at runtime.
   in **Windows Credential Manager** (`Studio Pulse/supabase/<project-ref>`); the access token stays
   in memory. The UI only receives status snapshots.
 
+### Analytics (Phase 3A, migration 10)
+
+`analytics_time_summary(ws, to, time_zone, from, bucket, user_ids, project_id, unattributed,
+application_id)` returns one `total` row, then `period`, `member`, `project`, `task` and
+`application` rows. It reads `time_entries` as the caller (`SECURITY INVOKER`, no
+`SECURITY DEFINER`), so it can never show more than a plain `select` would:
+
+- Members count only their own time. Owners and admins count teammates' time (former members'
+  too) only while the workspace's visibility is `admins`; `teammates_visible` on the total row
+  says which applies. Asking for other people's ids without that visibility gives a zero total.
+- The caller must be an active member (`P0002` "workspace not found" otherwise, also for removed
+  members); without a signed-in user it raises `28000`; `anon` cannot execute it.
+- Days are local calendar days in the IANA zone given (POSIX strings and abbreviations are
+  refused). The zone comes with each request and is never stored. Days run from 1 January 2020
+  to 31 December 2099. A report covers at most 366 days, or with a project 366 days by day, 1,100
+  by week and 3,660 by month, and at most 500 people. Without a first day, it starts on the local
+  day of the first entry in scope. Refused arguments raise `22023` with a plain sentence.
+- Overlapping entries (several devices, idle under active) are counted once, and filters apply
+  afterwards; `overlap_ms` on the total row is the duplicate time left out. The rules are in
+  `docs/analytics.md`.
+- Until it is applied, the web app's Analytics page says the database needs migration 10 (§10).
+
 ## 6. Sync semantics
 
 | Rule | How |
@@ -256,7 +283,9 @@ configured in this build. Debug builds also read the two variables at runtime.
 Every instant is stored as a UTC `timestamptz` remotely and as UTC epoch milliseconds locally. A
 time entry's duration is `ended_at − started_at`, and the database enforces
 `active_ms + idle_ms = duration`. Days, weeks and labels are computed in the viewer's local time
-zone at display time, using `@studio-pulse/time-engine`, which is DST-safe.
+zone at display time, using `@studio-pulse/time-engine`, which is DST-safe. Analytics (§5,
+migration 10) is the one place the server groups time into days: in the IANA zone each request
+names, which the web app takes from the viewer's reporting time zone and the server does not store.
 
 ## 8. What is uploaded
 
@@ -332,3 +361,5 @@ Phase 2B (`tests/integration/supabase/collaboration.test.ts` and the updated sui
 | "This project has tasks, notes or tracked time; archive it instead" | Deleting a project with work attached is refused, to keep history. Archive it |
 | "Archived projects take no new time" | Restore the project (or task) before attributing time to it |
 | "Only the note's owner can change its sharing, project, pin or archive state" | Ask the owner to change it |
+| "Analytics needs the latest database update…" | Migration 10 isn't applied (`PGRST202`, function not found). Apply it (§2) |
+| "This report took too long. Choose a shorter range or add a filter." | The statement timed out (`57014`). Owner and admin reports over long ranges are the slowest, because RLS checks every row |

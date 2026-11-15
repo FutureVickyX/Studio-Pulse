@@ -318,6 +318,39 @@ export const FUNCTIONS = {
     returns: { kind: 'scalar', type: 'uuid' },
     securityDefiner: true,
   },
+  analytics_time_summary: {
+    args: {
+      p_workspace_id: req('uuid'),
+      p_to: req('date'),
+      p_time_zone: req('text'),
+      p_from: optDflt('date'),
+      p_bucket: oneOf(optDflt('text'), ['day', 'week', 'month']),
+      p_user_ids: optDflt('uuid[]'),
+      p_project_id: optDflt('uuid'),
+      p_unattributed: optDflt('boolean'),
+      p_application_id: optDflt('text'),
+    },
+    returns: {
+      kind: 'table',
+      columns: {
+        dimension: oneOf(req('text'), ['total', 'period', 'member', 'project', 'task', 'application']),
+        bucket_start: opt('date'),
+        user_id: opt('uuid'),
+        application_id: opt('text'),
+        application_name: opt('text'),
+        project_id: opt('uuid'),
+        task_id: opt('uuid'),
+        unattributed: opt('boolean'),
+        active_ms: req('bigint'),
+        idle_ms: req('bigint'),
+        entry_count: req('integer'),
+        overlap_ms: req('bigint'),
+        teammates_visible: opt('boolean'),
+      },
+    },
+    // SECURITY INVOKER: RLS on time_entries decides whose time is counted.
+    securityDefiner: false,
+  },
   create_invitation: {
     args: { p_workspace_id: req('uuid'), p_email: req('text'), p_role: dflt('enum:workspace_role') },
     returns: {

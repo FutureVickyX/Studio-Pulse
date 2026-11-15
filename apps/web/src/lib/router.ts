@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-export type Section = 'overview' | 'projects' | 'tasks' | 'notes' | 'time';
+export type Section = 'overview' | 'projects' | 'tasks' | 'notes' | 'time' | 'analytics';
 
 export type Route =
   | { readonly name: 'overview' }
@@ -14,7 +14,8 @@ export type Route =
   | { readonly name: 'project'; readonly id: string }
   | { readonly name: 'tasks'; readonly view: 'mine' | 'all' }
   | { readonly name: 'notes'; readonly id: string | null }
-  | { readonly name: 'time' };
+  | { readonly name: 'time' }
+  | { readonly name: 'analytics' };
 
 export interface Location {
   readonly route: Route;
@@ -37,6 +38,8 @@ export function sectionOf(route: Route): Section {
       return 'notes';
     case 'time':
       return 'time';
+    case 'analytics':
+      return 'analytics';
   }
 }
 
@@ -63,6 +66,8 @@ function parseParts(parts: string[]): Route {
       return { name: 'notes', id: second && ID.test(second) ? second.toLowerCase() : null };
     case 'time':
       return { name: 'time' };
+    case 'analytics':
+      return { name: 'analytics' };
     default:
       return { name: 'overview' };
   }
@@ -82,6 +87,8 @@ export function formatRoute(route: Route): string {
       return route.id ? `#/notes/${encodeURIComponent(route.id)}` : '#/notes';
     case 'time':
       return '#/time';
+    case 'analytics':
+      return '#/analytics';
   }
 }
 

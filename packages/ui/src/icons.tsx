@@ -265,6 +265,15 @@ export const IconLock = createIcon(
 
 export const IconPulse = createIcon('Pulse', <path d="M2.5 10.5h3.25l1.6-4.25 2.6 8.5 2.05-6.25 1.25 2h4.25" />);
 
+/** Analytics: a value line over a baseline axis. */
+export const IconChart = createIcon(
+  'Chart',
+  <>
+    <path d="M3.25 3.25v13.5h13.5" />
+    <path d="m6.25 12.75 3-3.75 2.5 2.25 4.5-5.5" />
+  </>,
+);
+
 export const IconFile = createIcon(
   'File',
   <>

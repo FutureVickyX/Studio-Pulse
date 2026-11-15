@@ -6,6 +6,8 @@
   "description": "Design tokens, React primitives and lightweight SVG charts shared by desktop and (Phase 2) web.",
   "exports": {
     ".": "./src/index.ts",
+    "./scales": "./src/scales.ts",
+    "./seriesColors": "./src/seriesColors.ts",
     "./styles.css": "./src/styles.css"
   },
   "scripts": {

@@ -1,8 +1,8 @@
-# Studio Pulse — Team workspace (Phase 2B)
+# Studio Pulse — Team workspace (Phases 2B and 3A)
 
 The team workspace (`apps/web`) is where a studio plans and shares work: projects, tasks with
-checklists and comments, personal and shared notes, and attribution of synced desktop time to
-projects and tasks. It is a static React app with no server of its own. It talks to the same
+checklists and comments, personal and shared notes, attribution of synced desktop time to
+projects and tasks, and (Phase 3A) analytics of that time (§8). It is a static React app with no server of its own. It talks to the same
 Supabase project as the desktop app, with the publishable key and the signed-in user's session,
 so Row Level Security decides every read and write.
 
@@ -16,11 +16,12 @@ the desktop build links to a workspace (§3.3).
 | --- | --- |
 | **Overview** | Your work in progress (open tasks assigned to you, in progress, in review, overdue), your open tasks most urgent first, the team's open tasks that are overdue or due in the next 14 days, and recently updated projects and notes. A new, empty workspace gets a getting-started state; every list has its own empty state. The sidebar shows the workspace, you and your role. |
 | **Projects** | Projects with lead, start date, last update, task progress (done / total), due date and status. Views: Current, Completed, Archived and All; search. Owners and admins create projects. |
-| **Project** (`#/projects/<id>`) | Details, edit (version-checked), archive / restore, delete (only while nothing is attached). Its tasks, its notes and the time attributed to it: active and foreground totals, sessions, and active time per task. |
+| **Project** (`#/projects/<id>`) | Details, edit (version-checked), archive / restore, delete (only while nothing is attached). Its tasks, its notes and **Insights** on the time attributed to it (§8.3). |
 | **Tasks** | *My tasks* (assigned to you) and *All tasks*, grouped by status. Filters: status, project, assignee and priority; search by title. A project's tasks are on its page. A task opens as a panel over any page (`?task=<id>`). |
 | **Task panel** | Title, description, status, priority, assignee (active members only), project, start and due dates. Checklist (subtasks), comments, archive / restore, delete (only without tracked time), and the time attributed to the task. |
 | **Notes** | Personal (private) and shared notes, filtered by scope, project and archived; search by title and text. The editor autosaves (§5.2). Owners share or unshare, move to a project, pin, archive and delete. |
-| **Time** | Your synced desktop sessions for Today, Yesterday, 7 days or 30 days, with active and foreground totals overall and by project; filter by application to see one application's totals. Select sessions and attribute them to a project and optionally a task, or clear the attribution. |
+| **Time** | Your synced desktop sessions for Today, Yesterday, 7 days or 30 days, with active and foreground totals overall and by project; filter by application to see one application's totals. Select sessions and attribute them to a project and optionally a task, or clear the attribution. Days here group sessions by the day they started; Analytics splits sessions at midnight and counts overlapping time once, so totals can differ slightly. |
+| **Analytics** (`#/analytics`) | Recorded time and task progress for a range, for your own work or the workspace (§8). |
 
 The layout is a sidebar on desktop widths and a top bar with a slide-over menu at 760 px and below. It has one colour
 palette (no light or dark switch) and uses `@studio-pulse/ui`, the same tokens and
@@ -100,7 +101,7 @@ link to a workspace. Debug builds also read the variable at runtime.
 - **Realtime.** The page subscribes to `projects`, `tasks`, `task_subtasks`, `task_comments` and
   `notes` changes in the open workspace. For inserts and updates, Supabase checks RLS for every
   subscriber and the page filters by workspace, so a private note's contents never reach anyone
-  but its owner (verified live, §8). **Deletes are different:** Supabase can neither filter nor
+  but its owner (verified live, §9). **Deletes are different:** Supabase can neither filter nor
   RLS-check DELETE events, so every signed-in subscriber to these tables receives the id (only
   the id: no title, text or workspace) of every deleted row in the project, with its timing. The
   page refetches only for deleted rows it holds. Events only trigger a refetch, which is again
@@ -215,12 +216,95 @@ The workspace is **online-only**. Being honest about what that means:
 - Who sees whose time follows the workspace's time-entry visibility (Phase 2A): by default only
   your own. Project and task totals therefore show the time you can see, and the page says so.
 
-## 8. Testing
+## 8. Analytics (Phase 3A)
+
+Totals are added up on the server by `analytics_time_summary` (migration 10,
+[supabase.md §5](supabase.md#analytics-phase-3a-migration-10)), which reads time entries as the
+signed-in user, so RLS decides whose time counts. The page never downloads a tracking history to
+add it up, and the UI's own guess about visibility never widens what is shown.
+
+### 8.1 The Analytics page
+
+- **Views.** *My work* shows your own time: Active, In foreground, Unattributed (Idle instead
+  while a project filter is set) and Sessions tiles; activity over time (by day, week or month, or
+  a timeline of your sessions when the range is one day); time by application, project and task;
+  your task progress; your open tasks overdue or due in the next 7 days; your assigned projects;
+  and your recent sessions (with *Show more*, and *Only unattributed* while no project filter is
+  set). *Workspace* shows the same totals for everyone whose time you can see, or for one person
+  chosen under **Time of**, plus task progress and, for everyone, a **Members** table in
+  alphabetical order. A note at the top says whose time is included; where the server's answer
+  differs from what the page expected, the note follows the server.
+- **Sessions follow the filters.** The one-day timeline, Recent sessions and the *My sessions*
+  export apply the Project and Application filters as the totals do. A project filter that hides
+  all your assigned projects says so ("Not one of your assigned projects") rather than "No
+  assigned projects".
+- **Without teammates' visibility** (members, and owners and admins while the owner keeps time
+  private), *Workspace* shows task and project progress only, with no time and no request for it,
+  and links to *My work*.
+- **Range and filters.** Today, Yesterday, Last 7 days (the default), Last 30 days or a custom
+  range of up to 366 days from 1 January 2020. Project (a project, or Unattributed: no project and
+  no task) and Application. Filters apply after overlapping time is counted once, so a filtered
+  figure is a part of the unfiltered one.
+- **Previous period.** The Active tile names the previous period's total as a plain reference,
+  never as a change. It is left out for today alone and for a single teammate.
+- **No scores, rankings or judgements.** Lists of people are alphabetical; there is no
+  per-person trend for teammates. The footnote under every view with time says the figures are
+  recorded application time, not billable time, and that manual time entries aren't available
+  yet.
+- **Refresh and freshness.** The header shows when the figures were read ("Updated HH:MM").
+  Refresh reloads the report, projects, tasks and the workspace's visibility. Realtime doesn't
+  cover time entries, so new sessions appear on Refresh, when the tab becomes visible again, when
+  the browser comes back online or when the realtime channel reconnects. A session appears only
+  after it ends on the desktop and syncs, so today lags by the session still open.
+- **Errors.** A report that takes too long asks for a shorter range or a filter. A database
+  without migration 10 says so. If the database doesn't know the reporting time zone, the page
+  shows the report in UTC, says so, and forgets the saved zone.
+- **Exports** (header › Export): *Summary CSV* and *Summary JSON* in both views, *My sessions
+  CSV* and *My sessions JSON* in *My work* only. Files are named
+  `studio-pulse_<workspace>_<report>_<from>_to_<to>.<csv|json>`. CSV files are UTF-8 with a byte
+  order mark and CRLF line ends, and text cells that start with `=`, `+`, `-`, `@`, a tab or a
+  carriage return get a leading `'` so spreadsheets don't run them as formulas. CSV columns are
+  only ever appended to, and JSON files carry `formatVersion: 1`. *My sessions* holds your own
+  sessions overlapping the range that match the filters (and *Only unattributed*, when it is
+  on): the same sessions as Recent sessions, whole and not reconciled, so it can add up to more
+  than the summary. It is refused past 50,000 sessions. Export waits until the project and task
+  names it is labelled with have loaded.
+
+### 8.2 Time zones
+
+Days are calendar days in the **reporting time zone**: the browser's by default, or the one
+chosen in **Report settings**. Each request sends the zone's IANA name; the server uses it for
+that request only and doesn't store it. A day starts at the first instant of its date, so a
+day with a skipped midnight starts later and one with a repeated midnight starts at the earlier
+instant. Weeks start on Monday.
+
+### 8.3 Project Insights
+
+Each project page has an **Insights** section in place of the old tracked-time card: Active, In
+foreground and Sessions, tasks done (X of Y), activity over time, time by application and by task,
+tasks awaiting review and overdue tasks. The range is *All time* (the default, by month), *Last 90
+days* (by week) or *Last 30 days* (by day); the last two include today. It is labelled **Your time on
+this project** or **Time you can see on this project**, depending on visibility. Task counts come
+from the project's current tasks, not from the range. Deleting a project is still refused while
+any time is attached.
+
+### 8.4 Preferences
+
+The view, range, bucket, project and application filters, reporting time zone, Insights range and
+up to 20 named **saved views** are kept in this browser's `localStorage`, under your account and
+the workspace (`studio-pulse:analytics:<user>:<workspace>`). They are written shortly after a
+change and **survive sign-out on that browser, saved view names included**. Another account on
+the same browser has its own. The person picked under **Time of** is never saved, and no filter
+value or member id goes in the address. The report cache itself is held in memory and cleared on
+sign-out.
+
+## 9. Testing
 
 | What | Where | Command |
 | --- | --- | --- |
 | Pure logic: filters, sorting, due dates, validation, time totals, routes, error mapping, idempotent creates, paged list reads, cache updates, task-panel text sync, autosave (debounce, conflicts, retries, flush on dispose, per-user drafts, restore, meta writes) | `tests/unit/web` | `npx vitest run tests/unit/web` |
 | RLS for projects, tasks, checklists, comments, notes and attribution on a Supabase-shaped Postgres (PGlite) | `tests/integration/supabase` | `npx vitest run tests/integration/supabase` |
+| Analytics (Phase 3A): the report function, its TypeScript twin, the page's pure logic, exports and rendered cards | see [testing.md, Phase 3A](testing.md#phase-3a-analytics) | `npx vitest run tests/unit/web tests/unit/time-engine tests/integration/supabase/analytics.test.ts tests/integration/supabase/analytics-oracle.test.ts` |
 | The workspace's data layer against the real project, as three real users | `tests/live/workspace.live.test.ts` | see [tests/live/README.md](../tests/live/README.md) |
 | Every RLS/RPC check against the real project, incl. shared-note editing and version conflicts | `scripts/supabase/verify.mjs` | `npm run supabase:verify` |
 
@@ -250,3 +334,10 @@ Use two accounts in two browsers, or one normal and one private window:
    no longer offers itself for new time, then restore it.
 9. Narrow the window to 760 px or less: navigation moves into the menu and every page stays
    usable.
+10. Open **Analytics** as **B** (a member): *My work* shows only **B**'s time, and *Workspace*
+    shows task progress with no time. Set the workspace's time-entry visibility to `admins` (no
+    screen changes it yet: the owner calls `set_time_entry_visibility`, [supabase.md
+    §5](supabase.md#5-security-model)). As **A** (owner), press Refresh: *Workspace* now shows everyone's time and
+    the Members table, alphabetical. Export a summary and **A**'s sessions, and check that the
+    sessions file holds only **A**'s sessions. Sign out and back in: the saved views are still
+    there.

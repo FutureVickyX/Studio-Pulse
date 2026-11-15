@@ -69,6 +69,11 @@ const RPC_CALLS: ReadonlyArray<[string, string, (world: World) => unknown[]]> = 
     `select * from public.sync_time_entries($1, $2::jsonb)`,
     (w) => [w.wsA, JSON.stringify([entry()])],
   ],
+  [
+    'analytics_time_summary',
+    `select * from public.analytics_time_summary($1, '2026-10-16', 'UTC')`,
+    (w) => [w.wsA],
+  ],
   // The RLS helpers live in `private` (migration 5/5); anon has no USAGE on that schema.
   ['is_workspace_member', `select private.is_workspace_member($1)`, (w) => [w.wsA]],
   [
@@ -154,6 +159,13 @@ describe('the authenticated role without a user id (no sub claim)', () => {
         world.wsA,
         JSON.stringify([entry()]),
       ]),
+      '28000',
+    );
+  });
+
+  it('cannot read analytics (28000)', async () => {
+    fails(
+      await asNoSub(`select * from public.analytics_time_summary($1, '2026-10-16', 'UTC')`, [world.wsA]),
       '28000',
     );
   });

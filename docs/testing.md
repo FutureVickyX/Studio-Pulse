@@ -48,7 +48,37 @@ Phase 2B (team workspace):
 | The workspace's data layer against the real project as three real users, incl. realtime privacy | `tests/live/workspace.live.test.ts` (opt-in, see [tests/live/README.md](../tests/live/README.md)) | **Yes** |
 
 The signed-in UI itself (clicking through pages in a browser) is a manual check:
-[workspace.md §8](workspace.md#manual-check-of-the-team-workflows).
+[workspace.md §9](workspace.md#manual-check-of-the-team-workflows).
+
+### Phase 3A (analytics)
+
+| What | Where | Needs network |
+| --- | --- | --- |
+| `analytics_time_summary` on PGlite: signed-out, `anon`, non-member and removed callers refused, who sees whose time under 'private' and 'admins' (members, owners, admins, former members), every refused argument (`22023`), the function's properties (`SECURITY INVOKER`, stable, empty `search_path`, applications ordered with `collate "C"`), and figures worked out by hand: days across midnight and DST, overlapping devices, filters after reconciling (including a filter every row matches, which must give exactly the unfiltered figures), row order | `tests/integration/supabase/analytics.test.ts` | No |
+| Oracle: the SQL function against the TypeScript `summarizeReport`, row for row and in order, over seeded data around the DST changes of many zones (and Amman/Gaza 2021), every bucket, filter combination, user list and role, under several host time zones | `tests/integration/supabase/analytics-oracle.test.ts` | No |
+| Reconciliation and report summaries: literal hand-worked cases, local days across DST and odd offsets, the RPC's refusals, and seeded random cases against an independent brute-force reference | `tests/unit/time-engine/reconcile.test.ts` | No |
+| Day helpers and summaries give the same answer whatever the host's time zone (zones switched in-process and proven by `getTimezoneOffset`) | `tests/unit/time-engine/host-tz.test.ts` | No |
+| Analytics pure logic: scope, the server's visibility verdict and the privacy note that follows it, ranges, previous period, buckets, cache keys, session-list filters, view models, colours, filter options, task progress, CSV/JSON exports (column order, quoting, BOM, CRLF, formula neutralising, local times with offsets), file names, export readiness, footnotes, preferences and saved views | `tests/unit/web/analytics.test.ts` | No |
+| Data layer: `reportArgs`, paged `analyticsSummary` reads and their read time (`reportReadAt`), `listMySessions` filters (project, application, unattributed) and keyset paging, the 50,000-session export refusal, analytics cache invalidation | `tests/unit/web/analytics-api.test.ts` | No |
+| Every Analytics and Insights card rendered loading, empty, failed and with data; Members alphabetical with no sort or trend; privacy notes; the private-workspace panel shows no time; the Idle tile in place of Unattributed under a project filter; filtered empty states; "All sessions shown." focusable where "Show more" was; no "better", "worse", "rank", "score" or "productiv" in the markup; table captions and scoped headers; chart labels | `tests/unit/web/analytics-views.test.ts` | No |
+| `AreaChart` (data, empty, stale, accessible name, series colour never on text), the download helper, the `analytics` route and the report error sentences | `tests/unit/web/area-chart.test.ts`, `download.test.ts`, `router-errors-api.test.ts` | No |
+
+```bash
+npx vitest run tests/unit/web tests/unit/time-engine
+npx vitest run tests/integration/supabase/analytics.test.ts tests/integration/supabase/analytics-oracle.test.ts
+```
+
+**Under another host time zone.** Git Bash on Windows strips `TZ` before it reaches Node, so
+`TZ=… npx vitest` there silently runs in the machine's own zone. Use PowerShell, and check that
+the zone took effect (480 for Los Angeles):
+
+```powershell
+$env:TZ='America/Los_Angeles'; node -e "console.log(new Date(2026,0,1).getTimezoneOffset())"
+$env:TZ='America/Los_Angeles'; npx vitest run tests/unit/web/analytics.test.ts tests/unit/time-engine
+```
+
+The signed-in Analytics page itself (visibility, exports, saved views, narrow windows) is a manual
+check: [workspace.md §9](workspace.md#manual-check-of-the-team-workflows), steps 9 and 10.
 
 ## 2. Live Windows tests (real desktop session)
 

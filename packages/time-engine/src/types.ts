@@ -133,6 +133,102 @@ export interface SummarizeOptions {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Analytics reports (reconcile.ts): the TypeScript twin of `public.analytics_time_summary`
+// ---------------------------------------------------------------------------------------------
+
+/** One closed foreground interval of one application: a `public.time_entries` row. */
+export interface ReportInterval {
+  /** Unique per interval (the table's primary key). */
+  id: string;
+  userId: string;
+  deviceId: string;
+  applicationId: string;
+  applicationName: string;
+  /** Each interval is wholly active or wholly idle. */
+  kind: IntervalKind;
+  /** Inclusive start, UTC epoch ms (`started_at`); fractions of a millisecond are truncated. */
+  startMs: number;
+  /** Exclusive end, UTC epoch ms (`ended_at`); fractions of a millisecond are truncated. */
+  endMs: number;
+  projectId: string | null;
+  taskId: string | null;
+}
+
+/**
+ * The part of one interval that a report counts after reconciliation: the interval's own fields,
+ * with `startMs`/`endMs` narrowed to the piece. Pieces of one user never overlap.
+ */
+export interface ReconciledPiece extends Omit<ReportInterval, 'startMs' | 'endMs'> {
+  /** Inclusive start of the piece, UTC epoch ms (inside the interval and the range). */
+  startMs: number;
+  /** Exclusive end of the piece, UTC epoch ms. */
+  endMs: number;
+  /** The whole interval's start, UTC epoch ms (unclipped). */
+  sourceStartMs: number;
+  /** The whole interval's end, UTC epoch ms (unclipped). */
+  sourceEndMs: number;
+}
+
+export interface ReconcileResult {
+  /** Ordered by user id (code point order), then start. */
+  pieces: ReconciledPiece[];
+  /** Sum of every input interval's duration clipped to the range, before reconciliation. */
+  rawMs: number;
+}
+
+export type ReportBucket = 'day' | 'week' | 'month';
+
+export type ReportDimension = 'total' | 'period' | 'member' | 'project' | 'task' | 'application';
+
+/** One row of a report: the camelCase twin of an `analytics_time_summary` row. */
+export interface ReportRow {
+  dimension: ReportDimension;
+  /** Period rows: the bucket's first day, `YYYY-MM-DD` (the day, the ISO week's Monday or the 1st). */
+  bucketStart: string | null;
+  /** Member rows. */
+  userId: string | null;
+  /** Application rows. */
+  applicationId: string | null;
+  /** Application rows: the name on the contributing interval with the latest (start, id). */
+  applicationName: string | null;
+  /** Project and task rows; null on a project row means no project. */
+  projectId: string | null;
+  /** Task rows; null means no task. */
+  taskId: string | null;
+  /** Project rows: true for the row of time with no project and no task, false otherwise. */
+  unattributed: boolean | null;
+  activeMs: number;
+  idleMs: number;
+  /** Distinct intervals contributing to the row ("Sessions"). */
+  entryCount: number;
+  /** Total row only: duplicated time hidden from the figures shown; 0 on other rows. */
+  overlapMs: number;
+  /** Total row only: whether the caller can read other members' time; null on other rows. */
+  teammatesVisible: boolean | null;
+}
+
+export interface SummarizeReportOptions {
+  /** First local day, inclusive. Null or omitted: the local day of the first interval in scope. */
+  fromDay?: string | null;
+  /** Last local day, inclusive. */
+  toDay: string;
+  /** IANA name, e.g. `Europe/London`, or `UTC`. */
+  timeZone: string;
+  /** Default `day`. */
+  bucket?: ReportBucket;
+  /** Only these users' intervals. Null or omitted: every interval given. */
+  userIds?: readonly string[] | null;
+  /** Only this project's time. */
+  projectId?: string | null;
+  /** Only time with no project and no task. */
+  unattributed?: boolean;
+  /** Only this application's time. */
+  applicationId?: string | null;
+  /** Echoed on the total row. Default false. */
+  teammatesVisible?: boolean;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------------------------
 

@@ -8,7 +8,8 @@
  * - text columns constrained by `CHECK (col IN (...))` are typed as their literal union
  *   (`time_entries.kind`, `end_reason`, `source`);
  * - columns of `RETURNS TABLE` functions carry their real nullability and, where the function body
- *   fixes them, literal values (`sync_time_entries` → `entry_id`, `status`, `detail`);
+ *   fixes them, literal values (`sync_time_entries` → `entry_id`, `status`, `detail`;
+ *   `analytics_time_summary` → `dimension`, and its `p_bucket` argument);
  * - functions that only run as triggers are omitted (they cannot be called through the API).
  *
  * `Insert` / `Update` describe the table shape, exactly like generated types: the column-level
@@ -626,6 +627,45 @@ export type Database = {
       accept_invitation: {
         Args: { p_token: string };
         Returns: string;
+      };
+      analytics_time_summary: {
+        /**
+         * Days are local calendar days in `p_time_zone` (an IANA name). `p_from` null starts at the
+         * first entry in scope. Set at most one of `p_project_id` / `p_unattributed`.
+         */
+        Args: {
+          p_workspace_id: string;
+          /** Last local day, inclusive (`YYYY-MM-DD`). */
+          p_to: string;
+          p_time_zone: string;
+          p_from?: string | null;
+          p_bucket?: 'day' | 'week' | 'month' | null;
+          /** Null: everyone whose time the caller can read. */
+          p_user_ids?: string[] | null;
+          p_project_id?: string | null;
+          /** Only time with no project and no task. */
+          p_unattributed?: boolean | null;
+          p_application_id?: string | null;
+        };
+        /** Exactly one `total` row first, then period, member, project, task, application rows. */
+        Returns: {
+          dimension: 'total' | 'period' | 'member' | 'project' | 'task' | 'application';
+          bucket_start: string | null;
+          user_id: string | null;
+          application_id: string | null;
+          application_name: string | null;
+          project_id: string | null;
+          task_id: string | null;
+          /** Project rows only: true for the no-project, no-task row. */
+          unattributed: boolean | null;
+          active_ms: number;
+          idle_ms: number;
+          entry_count: number;
+          /** Total row only (0 elsewhere): time recorded twice and counted once. */
+          overlap_ms: number;
+          /** Total row only: whether teammates' time is included. */
+          teammates_visible: boolean | null;
+        }[];
       };
       create_invitation: {
         Args: {
