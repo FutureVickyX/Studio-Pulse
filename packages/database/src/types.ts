@@ -24,6 +24,103 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      notification_preferences: {
+        Row: {
+          workspace_id: string;
+          user_id: string;
+          config: Json;
+          updated_at: string;
+        };
+        Insert: {
+          workspace_id: string;
+          user_id?: string;
+          config?: Json;
+          updated_at?: string;
+        };
+        Update: {
+          workspace_id?: string;
+          user_id?: string;
+          config?: Json;
+          updated_at?: string;
+        };
+        Relationships: [
+          { foreignKeyName: 'notification_preferences_user_id_fkey'; columns: ['user_id']; isOneToOne: false; referencedRelation: 'profiles'; referencedColumns: ['id']; },
+          { foreignKeyName: 'notification_preferences_workspace_id_fkey'; columns: ['workspace_id']; isOneToOne: false; referencedRelation: 'workspaces'; referencedColumns: ['id']; },
+        ];
+      };
+      workspace_automation_settings: {
+        Row: {
+          workspace_id: string;
+          enabled: boolean;
+          events_enabled: boolean;
+          reminders_enabled: boolean;
+          digests_enabled: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          workspace_id: string;
+          enabled?: boolean;
+          events_enabled?: boolean;
+          reminders_enabled?: boolean;
+          digests_enabled?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          workspace_id?: string;
+          enabled?: boolean;
+          events_enabled?: boolean;
+          reminders_enabled?: boolean;
+          digests_enabled?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [
+          { foreignKeyName: 'workspace_automation_settings_workspace_id_fkey'; columns: ['workspace_id']; isOneToOne: true; referencedRelation: 'workspaces'; referencedColumns: ['id']; },
+        ];
+      };
+      notifications: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          recipient_id: string;
+          kind: 'assigned' | 'review' | 'completed' | 'due_soon' | 'due_today' | 'overdue' | 'awaiting_review' | 'inactive' | 'daily' | 'weekly';
+          title: string;
+          task_id: string | null;
+          project_id: string | null;
+          payload: Json;
+          created_at: string;
+          read_at: string | null;
+        };
+        Insert: {
+          id: string;
+          workspace_id: string;
+          recipient_id: string;
+          kind: 'assigned' | 'review' | 'completed' | 'due_soon' | 'due_today' | 'overdue' | 'awaiting_review' | 'inactive' | 'daily' | 'weekly';
+          title: string;
+          task_id?: string | null;
+          project_id?: string | null;
+          payload?: Json;
+          created_at?: string;
+          read_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          recipient_id?: string;
+          kind?: 'assigned' | 'review' | 'completed' | 'due_soon' | 'due_today' | 'overdue' | 'awaiting_review' | 'inactive' | 'daily' | 'weekly';
+          title?: string;
+          task_id?: string | null;
+          project_id?: string | null;
+          payload?: Json;
+          created_at?: string;
+          read_at?: string | null;
+        };
+        Relationships: [
+          { foreignKeyName: 'notifications_project_id_fkey'; columns: ['project_id']; isOneToOne: false; referencedRelation: 'projects'; referencedColumns: ['id']; },
+          { foreignKeyName: 'notifications_recipient_id_fkey'; columns: ['recipient_id']; isOneToOne: false; referencedRelation: 'profiles'; referencedColumns: ['id']; },
+          { foreignKeyName: 'notifications_task_id_fkey'; columns: ['task_id']; isOneToOne: false; referencedRelation: 'tasks'; referencedColumns: ['id']; },
+          { foreignKeyName: 'notifications_workspace_id_fkey'; columns: ['workspace_id']; isOneToOne: false; referencedRelation: 'workspaces'; referencedColumns: ['id']; },
+        ];
+      };
       profiles: {
         Row: {
           id: string;
@@ -624,6 +721,12 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      claim_automation_jobs: { Args: { p_limit?: number }; Returns: Json; };
+      finish_automation_job: { Args: { p_id: string; p_token: string; p_summary?: Json | null }; Returns: string; };
+      fail_automation_job: { Args: { p_id: string; p_token: string; p_code: string }; Returns: undefined; };
+      authorize_automation_worker: { Args: { p_credential: string }; Returns: boolean; };
+      plan_automation_jobs: { Args: { p_limit?: number }; Returns: number; };
+      automation_outcomes: { Args: { p_workspace_id: string }; Returns: Json; };
       accept_invitation: {
         Args: { p_token: string };
         Returns: string;

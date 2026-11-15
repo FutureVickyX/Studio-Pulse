@@ -25,6 +25,7 @@ const db = useDatabase();
 
 /** Every table in `public`; the privilege suite asserts this list is complete. */
 const TABLES = [
+  'notifications', 'notification_preferences', 'workspace_automation_settings',
   'notes',
   'profiles',
   'projects',
@@ -39,6 +40,12 @@ const TABLES = [
 
 /** Every function in `public` with arguments a client could pass. */
 const RPC_CALLS: ReadonlyArray<[string, string, (world: World) => unknown[]]> = [
+  ['automation_outcomes','select public.automation_outcomes($1)',w=>[w.wsA]],
+  ['claim_automation_jobs','select public.claim_automation_jobs(10)',()=>[]],
+  ['plan_automation_jobs','select public.plan_automation_jobs(10)',()=>[]],
+  ['authorize_automation_worker','select public.authorize_automation_worker($1)',()=>['untrusted']],
+  ['finish_automation_job','select public.finish_automation_job(null,null,null)',()=>[]],
+  ['fail_automation_job',"select public.fail_automation_job(null,null,'network')",()=>[]],
   ['create_workspace', `select public.create_workspace($1)`, () => ['Anon studio']],
   [
     'create_invitation',
@@ -113,7 +120,7 @@ describe('anon key', () => {
       '42501',
       PERMISSION_DENIED,
     );
-    const column = table === 'workspace_members' ? 'role' : 'id';
+    const column = table === 'workspace_members' ? 'role' : table === 'notification_preferences' || table === 'workspace_automation_settings' ? 'workspace_id' : 'id';
     fails(
       await db().query('anon', `update public.${table} set ${column} = ${column}`),
       '42501',
