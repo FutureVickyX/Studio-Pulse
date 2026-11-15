@@ -17,6 +17,7 @@
     "build": "npm run tauri:build -w @studio-pulse/desktop",
     "dev:web": "npm run dev -w @studio-pulse/web",
     "build:web": "npm run build -w @studio-pulse/web",
+    "build:automation": "node scripts/build-automation-worker.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.json",
     "test": "npm run test:ts && npm run test:rust",
     "test:ts": "vitest run",

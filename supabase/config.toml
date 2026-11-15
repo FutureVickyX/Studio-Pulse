@@ -1,0 +1,3 @@
+[functions.automation-worker]
+# The handler verifies a dedicated scheduler secret. Normal user JWTs are rejected.
+verify_jwt = false
