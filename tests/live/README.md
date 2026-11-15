@@ -3,7 +3,8 @@
 Not part of `npm test`: they need the network, a project with every migration applied, and three
 confirmed throwaway users. They run the web workspace's data layer
 (`apps/web/src/lib/api.ts`) exactly as the UI does, through the publishable key and each user's own
-session, and delete what they create.
+session. The provisioning operator deletes test workspaces and users afterwards; authenticated
+clients intentionally have no workspace DELETE permission.
 
 ```bash
 SUPABASE_URL=https://<ref>.supabase.co \
@@ -19,3 +20,15 @@ the secret key (`scripts/supabase/verify.mjs` does) or with SQL, as described in
 [docs/supabase.md §3](../../docs/supabase.md#3-verify-against-the-real-project).
 
 Without the three variables the suite is skipped.
+
+`automation.live.test.ts` additionally requires the deployed Phase 3B worker and an active
+verified scheduler. Four checks cover scheduled assignment/deadline/digest delivery, recipient
+privacy/read state, digest equality with the authenticated Phase 3A RPC, and rejected privileged
+operations. A fifth creates twelve tasks to test idempotent burst delivery. Its optional
+concurrent-worker verification uses two trusted operator invocations; tests never receive the
+worker or service-role credential. Polling is bounded to 110 seconds, not an unlimited wait.
+
+The automation suite records exact workspace IDs in `automationWorkspace`/`automationWorkspaces`
+in the supplied ignored fixture file for operator cleanup. Stop test sessions, delete those
+workspaces (and other workspaces created by the disposable users), then delete the users and
+credential file. Never run these checks against real user accounts or delete unrelated data.

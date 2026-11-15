@@ -1,8 +1,6 @@
--- Run as the trusted database operator AFTER migrations 10-12 and the Edge deployment.
+-- Run as the trusted database operator AFTER migrations 10-13 and the Edge deployment.
 -- Re-running replaces the same named job. No application computer needs to stay awake.
 begin;
-create extension if not exists pg_cron with schema pg_catalog;
-create extension if not exists pg_net with schema extensions;
 
 -- Configure only the public project URL before running this script:
 -- select vault.create_secret('https://YOUR_PROJECT.supabase.co','studio_pulse_automation_url');
@@ -10,6 +8,10 @@ create extension if not exists pg_net with schema extensions;
 do $$
 declare invocation_key text;
 begin
+ if not exists(select 1 from pg_catalog.pg_extension where extname='pg_cron') or
+    not exists(select 1 from pg_catalog.pg_extension where extname='pg_net') then
+   raise exception 'Apply the automation scheduler extensions migration on supported Supabase hosting first';
+ end if;
  if not exists(select 1 from vault.decrypted_secrets where name='studio_pulse_automation_url'
    and decrypted_secret ~ '^https://[a-z0-9]+\.supabase\.co$') then
    raise exception 'Set the studio_pulse_automation_url Vault secret to the public project URL first';
@@ -24,7 +26,7 @@ begin
 end; $$;
 
 -- pg_net temporarily queues the decrypted LIMITED key, never a service-role credential.
-revoke all on net.http_request_queue,net._http_response from public,anon,authenticated;
+-- The extensions migration denies client access to the request and response tables.
 
 select cron.schedule('studio-pulse-automation','* * * * *',$schedule$
  select net.http_post(
