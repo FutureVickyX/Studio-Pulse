@@ -80,6 +80,30 @@ $env:TZ='America/Los_Angeles'; npx vitest run tests/unit/web/analytics.test.ts t
 The signed-in Analytics page itself (visibility, exports, saved views, narrow windows) is a manual
 check: [workspace.md §9](workspace.md#manual-check-of-the-team-workflows), steps 9 and 10.
 
+## Phase 3B automation checks
+
+`tests/integration/supabase/automation.test.ts` applies the real migrations on PGlite and checks
+recipient/workspace isolation, client forgery refusal, service-only key verification, assignments,
+reassignment generations, lead reviews, completion opt-in, read-state grants, claims, expired
+leases, rollback recovery, five-attempt backoff, quiet hours/DST, calendar deadlines, stale
+reminders, inactive/comment activity, digests and workspace switches. The privilege and anonymous
+inventories also cover every new table and function.
+
+`tests/unit/web/automation.test.ts` checks preference validation, digest equality with Phase 3A
+and the trusted HTTP worker's authentication/failure handling. `automation-views.test.ts` renders
+loading, empty, offline/stale and permission states. These render fixtures are test-only and do
+not stand in for signed-in hosted acceptance.
+
+```powershell
+npx vitest run tests/integration/supabase/automation.test.ts tests/unit/web/automation.test.ts tests/unit/web/automation-views.test.ts
+npm run build:automation
+```
+
+PGlite serializes queries: independent real PostgreSQL requests are required to verify true
+concurrent claims. The hosted schedule needs an actual cron run, HTTP success and delivered
+notification. See [automation.md](automation.md#verify-hosting-then-enable-summaries) for the
+hosted checklist and [handoff-phase-3b.md](handoff-phase-3b.md) for results, not assumed passes.
+
 ## 2. Live Windows tests (real desktop session)
 
 ```bash

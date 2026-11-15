@@ -110,6 +110,18 @@ server. They follow the same rules as every other read of time entries, enforced
 - Applications hidden in a device's reports still appear here (see the table above), and today's
   figures leave out the session still open on your computer until it ends and syncs.
 
+## Notifications and personal summaries
+
+Notifications are addressed to one person and require their active workspace membership to read.
+Workspace administrators cannot browse another person's notification inbox. Personal preferences
+are stored per workspace; administrator outcome logs omit recipients and private payloads.
+
+Opt-in daily/weekly summaries read only your own assigned tasks and recorded time in that
+workspace. They use Analytics' reconciliation rules and label application measurements separately
+from manual or billable time. Private notes are never included. Received summaries are snapshots;
+late offline uploads appear in later reports. In-app delivery is the only supported channel.
+See [automation.md](automation.md) for scheduling, quiet hours and data retention.
+
 ## Principles
 
 - **No hidden monitoring.** Tracking is always visible and can always be paused.

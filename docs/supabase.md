@@ -1,4 +1,4 @@
-# Studio Pulse — Supabase backend (Phases 2A, 2B and 3A)
+# Studio Pulse — Supabase backend (Phases 2A, 2B, 3A and 3B)
 
 Phase 2A adds team identity, a workspace-scoped Postgres schema protected by Row Level Security,
 and reliable upload of the intervals the desktop tracker records locally. The tracker, idle
@@ -59,6 +59,12 @@ Migrations live in `supabase/migrations/` and run in filename order:
 | `20261024090000_workspace_collaboration.sql` | Phase 2B. Project statuses (planning, on hold, completed), lead, start and due dates; `version` on projects and tasks; `task_subtasks` and `task_comments`; shared notes editable by members (sharing, project, pin and archive stay owner-only); `archived_at` on notes; time attribution (`set_time_entry_attribution`); deletion guards that keep history; client-supplied ids for idempotent creates; the shared tables join `supabase_realtime` |
 | `20261029090000_collaboration_fixes.sql` | Phase 2B review fixes. A project's lead and a task's assignee are validated when they change, so a project or task that still names a former member stays editable by those allowed to edit it. Moving a task to another project moves its tracked time with it (refused into an archived project) |
 | `20261112090000_analytics.sql` | Phase 3A. The read-only `analytics_time_summary` RPC: time totals by day, week or month, member, project, task and application, added up on the server. `SECURITY INVOKER`, so RLS decides whose time counts. No table, policy, index or grant on data changes |
+| `20261112120000_automation_foundation.sql` | Phase 3B. Recipient-private notifications/preferences, administrator workspace switches, private jobs/leases/attempts, task event triggers and service-only worker operations |
+| `20261112120100_automation_scheduling.sql` | Phase 3B. Calendar planner, quiet hours, date-only deadlines, digest occurrences, comment activity and notification Realtime |
+
+Phase 3B hosting is a separate explicit step: [automation.md](automation.md). The client needs
+no new key. The Edge worker uses its built-in server credential; cron uses a limited key generated
+inside Vault. Applying migrations alone does not install the scheduler.
 
 ```bash
 npm run supabase:migrate:status

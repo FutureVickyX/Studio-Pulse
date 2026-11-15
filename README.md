@@ -12,7 +12,9 @@ application name and timing is collected.
 > **Status: Phase 1 (desktop tracking), Phase 2A (Supabase accounts, workspaces, RLS and desktop
 > sync), Phase 2B (the team workspace: projects, tasks, notes and time attribution, in
 > `apps/web`) and Phase 3A (analytics in the workspace: an Analytics page and project
-> Insights).** The desktop app runs on Windows 10/11; the workspace runs in any modern browser.
+> Insights), plus Phase 3B automation code (notifications, reminders and personal summaries;
+> hosting requires separate deployment and verification).** The desktop app runs on Windows
+> 10/11; the workspace runs in any modern browser.
 > Quick capture, manual time entries and billable time are not built yet. macOS and Linux
 > desktops are not supported.
 
@@ -73,6 +75,17 @@ Notes and Projects entries open the workspace when the build links to one. See
   No scores, rankings or judgements; people are listed alphabetically. See
   [docs/workspace.md §8](docs/workspace.md#8-analytics-phase-3a) and
   [docs/privacy.md](docs/privacy.md#analytics-in-the-team-workspace).
+
+## What Phase 3B adds: workflow automation
+
+- A recipient-private notification center with unread counts and confirmed read actions.
+- Task assignments, project-lead reviews, optional completion notices and calendar reminders.
+- Personal preferences, quiet hours, time zones and administrator workspace rule switches.
+- Opt-in daily/weekly in-app summaries using Phase 3A's reporting math.
+- A server outbox with idempotent delivery, leases, bounded retries and safe outcome logs.
+
+See [deployment and limits](docs/automation.md) and [the verification report](docs/handoff-phase-3b.md).
+The scheduler runs on Supabase after deployment; Windows tracking and offline sync are unchanged.
 
 ## Quick start (development)
 
