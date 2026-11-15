@@ -22,6 +22,9 @@ Base: `db068eb` (clean checkout), fast-forwarded to Phase 3A commit `7897fdd` on
   separate Supabase confirmation, subsequently completed. Migrations 10-13, the worker and the
   development scheduler are deployed. Public configuration exists in ignored env files; no
   privileged credential is needed in either frontend.
+- Scheduled delivery, concurrent-worker deduplication, digest equality with the reporting RPC
+  and signed-in browser workflows passed. Later the project became unreachable. The older
+  workspace live suite and final test-cleanup confirmation remain blocked on hosting availability.
 
 ## Ordered slices
 

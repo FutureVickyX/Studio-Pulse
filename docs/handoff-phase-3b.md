@@ -11,6 +11,9 @@ named minutely cron job has successful runs, HTTP 200 responses and confirmed de
 Phase 3A's missing analytics migration is applied; its `SECURITY INVOKER` property was verified
 in the hosted catalog. The other Supabase project was not modified. This is verification of
 the development deployment, not a claim that a separate production environment was deployed.
+**At final verification, the project became unreachable:** both Auth health and REST requests
+timed out, as did the database connector. Current hosted availability and test-data cleanup
+therefore remain unconfirmed despite the earlier successful scheduled deliveries.
 
 ## Changes and reused systems
 
@@ -96,11 +99,14 @@ only unused-index information on this almost-empty development database; no inde
 The development project has migrations recorded under their repository versions, the deployed
 worker, Vault URL/limited credential/hash, and the active `studio-pulse-automation` schedule.
 No additional client key or manually supplied Edge secret was required. Signed-in checks used
-three disposable confirmed accounts and server-backed records. A scoped cleanup request for
-those accounts/workspaces is pending confirmation; it is not reported successful without a
-database response and a zero-count verification.
+three disposable confirmed accounts and server-backed records. The scoped account/workspace
+cleanup request timed out; its commit cannot be confirmed and must not be assumed either way.
+The local credential file was removed and the isolated test browser closed. The ignored local
+`.claude/phase3b-cleanup.mjs` retains only the exact disposable IDs and the idempotent cleanup SQL,
+without credentials. Rerun it through the development-project database connector once healthy,
+then verify zero remaining test accounts/workspaces/notifications. Keep the scheduler installed.
 
-The older workspace live suite should be rerun when Auth is healthy. Its later setup timeouts do
+The older workspace live suite should be rerun when Auth and database access are healthy. Its later setup timeouts do
 not invalidate the earlier five passing automation checks or signed-in browser checks, but the
 broader live regression acceptance remains incomplete. No retries or suppressed assertions were
 added to make that suite appear green.
@@ -123,7 +129,8 @@ do not backfill missed days and do not rewrite themselves for late offline uploa
 is capped at 20 items, project progress at 100; overlarge time inputs fail rather than silently
 truncate. Retention and deliberate failed-job replay remain trusted operator actions.
 
-The next step is review/merge of the feature branch and deployment of the updated static web
-bundle to the chosen workspace host. Later consider optional consented external delivery and
+The next step is recovery of development-project availability, confirmation of scoped test cleanup
+and rerunning the older live suite. Then review/merge the feature branch and deploy the updated
+static web bundle to the chosen workspace host. Later consider optional consented external delivery and
 retention tooling, keeping application time distinct from billable work.
 Full setup and manual workflow steps are in [automation.md](automation.md).
