@@ -1972,3 +1972,23 @@ button.web-row:hover .web-row__title {
     transition: none;
   }
 }
+
+/* Phase 3B: compact, recipient-private notices and built-in automation settings. */
+.web-automation-page { gap: 16px; }
+.web-notifications { display: grid; gap: 12px; list-style: none; padding: 0; }
+.web-notification--unread { border-left: 2px solid var(--sp-accent); }
+.web-notification__top, .web-notification__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.web-notification__top time, .web-notification__project, .web-automation-hint { color: var(--sp-text-muted); font-size: var(--sp-text-sm); }
+.web-notification h2 { font-size: var(--sp-text-lg); margin-block: 10px; }
+.web-notification__actions { margin-top: 12px; }
+.web-automation-setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 10px; }
+.web-automation-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.web-automation-fields .sp-input, .web-automation-fields .sp-select-wrap { width: 100%; }
+.web-automation-hint { margin-block: 12px; line-height: 1.6; }
+.web-digest-facts { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 16px; margin-block: 16px; }
+.web-digest-facts dt { color: var(--sp-text-muted); font-size: var(--sp-text-sm); }
+.web-digest-facts dd { font-size: var(--sp-text-xl); margin: 4px 0; font-variant-numeric: tabular-nums; }
+.web-automation-table { overflow-x: auto; }
+.web-automation-table table { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
+.web-automation-table th, .web-automation-table td { padding: 8px; border-bottom: var(--sp-hairline) solid var(--sp-border); }
+@media(max-width:600px) { .web-automation-fields { grid-template-columns: minmax(0,1fr); } }

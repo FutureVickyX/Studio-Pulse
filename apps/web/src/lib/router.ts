@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-export type Section = 'overview' | 'projects' | 'tasks' | 'notes' | 'time' | 'analytics';
+export type Section = 'overview' | 'projects' | 'tasks' | 'notes' | 'time' | 'analytics' | 'notifications' | 'automation';
 
 export type Route =
   | { readonly name: 'overview' }
@@ -15,7 +15,9 @@ export type Route =
   | { readonly name: 'tasks'; readonly view: 'mine' | 'all' }
   | { readonly name: 'notes'; readonly id: string | null }
   | { readonly name: 'time' }
-  | { readonly name: 'analytics' };
+  | { readonly name: 'analytics' }
+  | { readonly name: 'notifications' }
+  | { readonly name: 'automation' };
 
 export interface Location {
   readonly route: Route;
@@ -40,6 +42,8 @@ export function sectionOf(route: Route): Section {
       return 'time';
     case 'analytics':
       return 'analytics';
+    case 'notifications': return 'notifications';
+    case 'automation': return 'automation';
   }
 }
 
@@ -68,6 +72,8 @@ function parseParts(parts: string[]): Route {
       return { name: 'time' };
     case 'analytics':
       return { name: 'analytics' };
+    case 'notifications': return {name:'notifications'};
+    case 'automation': return {name:'automation'};
     default:
       return { name: 'overview' };
   }
@@ -89,6 +95,8 @@ export function formatRoute(route: Route): string {
       return '#/time';
     case 'analytics':
       return '#/analytics';
+    case 'notifications': return '#/notifications';
+    case 'automation': return '#/automation';
   }
 }
 

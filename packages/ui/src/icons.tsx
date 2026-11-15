@@ -347,3 +347,5 @@ export const IconUserPlus = createIcon(
     <path d="M2.75 16.5a5.5 5.5 0 0 1 9.4-3.9M15.25 11.5v5M12.75 14h5" />
   </>,
 );
+
+export const IconBell = createIcon('Bell', <><path d="M5 8a5 5 0 0 1 10 0c0 5 2 5 2 6H3c0-1 2-1 2-6Z"/><path d="M8 17h4"/></>);
