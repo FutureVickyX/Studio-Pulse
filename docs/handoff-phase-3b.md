@@ -1,6 +1,7 @@
 # Phase 3B implementation and verification
 
-Date: 15 November 2026. Branch: `feat/phase-3b-automation`, isolated worktree
+Implemented: 15 November 2026. Follow-up verification: 16 November 2026.
+Branch: `feat/phase-3b-automation`, isolated worktree
 `studio-pulse-automation`, based on Claude's Phase 3A commit `7897fdd`.
 
 ## Delivery status
@@ -11,9 +12,11 @@ named minutely cron job has successful runs, HTTP 200 responses and confirmed de
 Phase 3A's missing analytics migration is applied; its `SECURITY INVOKER` property was verified
 in the hosted catalog. The other Supabase project was not modified. This is verification of
 the development deployment, not a claim that a separate production environment was deployed.
-**At final verification, the project became unreachable:** both Auth health and REST requests
-timed out, as did the database connector. Current hosted availability and test-data cleanup
-therefore remain unconfirmed despite the earlier successful scheduled deliveries.
+The project became unreachable during the initial final checks on 15 November. On 16 November
+database access recovered, the seven remaining live workspace checks passed, and the scheduler
+was confirmed active with successful cron runs and HTTP 200 responses. Both sets of test
+accounts/workspaces were deleted; final verification confirmed zero test accounts, workspaces
+or notifications, with the scheduler still active.
 
 ## Changes and reused systems
 
@@ -74,7 +77,8 @@ reporting and other workspace policies were not widened.
 | Scheduler with no desktop/browser trigger | Repeated cron runs succeeded; HTTP returned 200; assignment, due-today, daily and weekly notifications were confirmed in the database |
 | Hosted digest equality | Both daily/weekly foreground, active and idle totals matched the authenticated Phase 3A RPC, including a two-device overlap and unassigned time |
 | Latest optional-extension migration | Applied on hosted PostgreSQL; the local automation suite reran **19/19 passed** |
-| Older seven-test workspace live regression suite | **Not passed**: setup was blocked by hosted Auth 504 `request_timeout` / context-deadline errors; no assertions ran. Sequential fixture sign-in did not resolve it. Existing local workspace regressions passed in the full suite |
+| Older seven-test workspace live regression suite | **7 passed on 16 November**, with fresh disposable users: membership isolation, projects, task assignment/idempotency, checklists/comments, private/shared notes and conflicts, time attribution/archive preservation, Realtime privacy. Earlier 15 November runs were blocked during setup by Auth 504 timeouts and are not counted as passes |
+| Final cleanup and hosting check, 16 November | **Confirmed**: zero test accounts, test workspaces and test notifications; temporary credential file absent; all 13 migrations retained; scheduler active, latest cron run successful and three recent worker responses HTTP 200 without timeout |
 | Adversarial test mutation | Removing recipient isolation caused the privacy test to fail; original policy restored |
 | Hosted Phase 3A migration | Applied; catalog confirms invoker execution |
 
@@ -98,18 +102,17 @@ only unused-index information on this almost-empty development database; no inde
 
 The development project has migrations recorded under their repository versions, the deployed
 worker, Vault URL/limited credential/hash, and the active `studio-pulse-automation` schedule.
-No additional client key or manually supplied Edge secret was required. Signed-in checks used
-three disposable confirmed accounts and server-backed records. The scoped account/workspace
-cleanup request timed out; its commit cannot be confirmed and must not be assumed either way.
-The local credential file was removed and the isolated test browser closed. The ignored local
-`.claude/phase3b-cleanup.mjs` retains only the exact disposable IDs and the idempotent cleanup SQL,
-without credentials. Rerun it through the development-project database connector once healthy,
-then verify zero remaining test accounts/workspaces/notifications. Keep the scheduler installed.
+No additional client key or manually supplied Edge secret was required. The initial three
+disposable accounts and their three workspaces were deleted on 16 November and verified absent.
+The isolated browser was closed and its temporary credential file removed. A new set of three
+temporary accounts was used for the successful seven-check regression rerun, then deleted using
+only their exact fixture IDs and test workspace names. Final database checks confirmed zero
+test accounts, test workspaces and test notifications. The fresh credential file was removed.
+The scheduler, Vault configuration and all migrations remain installed.
 
-The older workspace live suite should be rerun when Auth and database access are healthy. Its later setup timeouts do
-not invalidate the earlier five passing automation checks or signed-in browser checks, but the
-broader live regression acceptance remains incomplete. No retries or suppressed assertions were
-added to make that suite appear green.
+All twelve hosted checks have now passed across the automation and workspace suites. The
+earlier Auth outage remains part of the historical results; no failed run was relabelled as
+passing, and no assertions were removed or suppressed.
 
 For another environment, follow [automation.md](automation.md): apply migrations, build/deploy
 the worker, set the public URL in Vault, run the installer and require cron success, HTTP 200 and
@@ -129,8 +132,7 @@ do not backfill missed days and do not rewrite themselves for late offline uploa
 is capped at 20 items, project progress at 100; overlarge time inputs fail rather than silently
 truncate. Retention and deliberate failed-job replay remain trusted operator actions.
 
-The next step is recovery of development-project availability, confirmation of scoped test cleanup
-and rerunning the older live suite. Then review/merge the feature branch and deploy the updated
-static web bundle to the chosen workspace host. Later consider optional consented external delivery and
+The next step is review/merge of the feature branch and deployment of the updated static web
+bundle to the chosen workspace host. Later consider optional consented external delivery and
 retention tooling, keeping application time distinct from billable work.
 Full setup and manual workflow steps are in [automation.md](automation.md).
