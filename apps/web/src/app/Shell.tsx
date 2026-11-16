@@ -3,9 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  Badge,
+  IconBell,
+  IconSettings,
   BrandMark,
   Button,
   IconButton,
+  IconChart,
   IconClock,
   IconClose,
   IconHome,
@@ -23,7 +27,11 @@ import type { Problem } from '../lib/errors';
 import { watchWorkspace } from '../lib/realtime';
 import { formatRoute, sectionOf } from '../lib/router';
 import type { Route, Section } from '../lib/router';
+import { useAutomationRefresh, useNotificationFeed } from './automation';
+import { NotificationsView } from '../views/NotificationsView';
+import { AutomationView } from '../views/AutomationView';
 import { Avatar, ProblemBanner } from '../components/common';
+import { AnalyticsView } from '../views/AnalyticsView';
 import { NotesView } from '../views/NotesView';
 import { OverviewView } from '../views/OverviewView';
 import { ProjectDetailView } from '../views/ProjectDetailView';
@@ -39,10 +47,14 @@ const NAV: ReadonlyArray<{ section: Section; label: string; icon: ReactNode; rou
   { section: 'tasks', label: 'Tasks', icon: <IconTasks size={16} />, route: { name: 'tasks', view: 'mine' } },
   { section: 'notes', label: 'Notes', icon: <IconNotes size={16} />, route: { name: 'notes', id: null } },
   { section: 'time', label: 'Time', icon: <IconClock size={16} />, route: { name: 'time' } },
+  { section: 'notifications', label: 'Notifications', icon: <IconBell size={16}/>, route: {name:'notifications'} },
+  { section: 'automation', label: 'Automation', icon: <IconSettings size={16}/>, route: {name:'automation'} },
+  { section: 'analytics', label: 'Analytics', icon: <IconChart size={16} />, route: { name: 'analytics' } },
 ];
 
 export function Shell({ membersProblem, onRetryMembers }: { membersProblem: Problem | null; onRetryMembers: () => void }) {
   const { client, workspace, nav } = useWorkspace();
+  useAutomationRefresh();
   const { location } = nav;
   const { route, taskId } = location;
   const section = sectionOf(route);
@@ -100,11 +112,16 @@ function Page({ route }: { route: Route }) {
       return <NotesView noteId={route.id} />;
     case 'time':
       return <TimeView />;
+    case 'analytics':
+      return <AnalyticsView />;
+    case 'notifications': return <NotificationsView/>;
+    case 'automation': return <AutomationView/>;
   }
 }
 
 function Sidebar({ section }: { section: Section }) {
   const { workspace, workspaces, user, selectWorkspace, signOut, nav } = useWorkspace();
+  const notifications=useNotificationFeed();
   return (
     <aside className="web-sidebar" aria-label="Workspace">
       <div className="web-brand">
@@ -141,6 +158,7 @@ function Sidebar({ section }: { section: Section }) {
               >
                 <span className="web-nav__icon">{item.icon}</span>
                 <span className="web-nav__label">{item.label}</span>
+                {item.section==='notifications' && (notifications.data?.unread??0)>0 ? <Badge tone="accent"><span aria-label={`${notifications.data?.unread} unread notifications`}>{notifications.data?.unread}</span></Badge>:null}
               </a>
             </li>
           ))}

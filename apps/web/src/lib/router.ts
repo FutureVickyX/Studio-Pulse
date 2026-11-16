@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-export type Section = 'overview' | 'projects' | 'tasks' | 'notes' | 'time';
+export type Section = 'overview' | 'projects' | 'tasks' | 'notes' | 'time' | 'analytics' | 'notifications' | 'automation';
 
 export type Route =
   | { readonly name: 'overview' }
@@ -14,7 +14,10 @@ export type Route =
   | { readonly name: 'project'; readonly id: string }
   | { readonly name: 'tasks'; readonly view: 'mine' | 'all' }
   | { readonly name: 'notes'; readonly id: string | null }
-  | { readonly name: 'time' };
+  | { readonly name: 'time' }
+  | { readonly name: 'analytics' }
+  | { readonly name: 'notifications' }
+  | { readonly name: 'automation' };
 
 export interface Location {
   readonly route: Route;
@@ -37,6 +40,10 @@ export function sectionOf(route: Route): Section {
       return 'notes';
     case 'time':
       return 'time';
+    case 'analytics':
+      return 'analytics';
+    case 'notifications': return 'notifications';
+    case 'automation': return 'automation';
   }
 }
 
@@ -63,6 +70,10 @@ function parseParts(parts: string[]): Route {
       return { name: 'notes', id: second && ID.test(second) ? second.toLowerCase() : null };
     case 'time':
       return { name: 'time' };
+    case 'analytics':
+      return { name: 'analytics' };
+    case 'notifications': return {name:'notifications'};
+    case 'automation': return {name:'automation'};
     default:
       return { name: 'overview' };
   }
@@ -82,6 +93,10 @@ export function formatRoute(route: Route): string {
       return route.id ? `#/notes/${encodeURIComponent(route.id)}` : '#/notes';
     case 'time':
       return '#/time';
+    case 'analytics':
+      return '#/analytics';
+    case 'notifications': return '#/notifications';
+    case 'automation': return '#/automation';
   }
 }
 

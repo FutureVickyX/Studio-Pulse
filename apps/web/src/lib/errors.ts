@@ -120,6 +120,8 @@ export function toProblem(error: unknown): Problem {
     case 'P0002':
     case 'PGRST116':
       return { kind: 'notFound', message: isOwnMessage(message) ? sentence(message) : 'That item no longer exists.', code };
+    case '57014': // statement timeout
+      return { kind: 'unknown', message: 'That took too long. Try again.', code };
     default:
       break;
   }
@@ -127,6 +129,37 @@ export function toProblem(error: unknown): Problem {
   if (status === 401) return { kind: 'session', message: SESSION, code };
   if (status === 403) return { kind: 'permission', message: PERMISSION, code };
   return { kind: 'unknown', message: 'Something went wrong. Try again.', code };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Analytics reports (analytics_time_summary)
+// ---------------------------------------------------------------------------------------------
+
+export const REPORT_TOO_SLOW = 'This report took too long. Choose a shorter range or add a filter.';
+export const REPORT_NEEDS_MIGRATION =
+  'Analytics needs the latest database update. Ask the workspace owner to apply migration 10.';
+
+/**
+ * An error from the analytics report function. Besides `toProblem`'s rules: a statement timeout
+ * asks for a narrower report, and a missing function (PGRST202: migration 10 is not applied on
+ * this database yet) says so instead of "Something went wrong". Its own 22023 sentences pass
+ * through as for every function; `isTimeZoneProblem` picks out the one the view handles itself.
+ */
+export function toReportProblem(error: unknown): Problem {
+  if (!isNetworkError(error) && typeof error === 'object' && error !== null) {
+    const code = (error as Coded).code;
+    if (code === '57014') return { kind: 'invalid', message: REPORT_TOO_SLOW, code };
+    if (code === 'PGRST202') return { kind: 'blocked', message: REPORT_NEEDS_MIGRATION, code };
+  }
+  return toProblem(error);
+}
+
+/**
+ * The report refused its time zone ("unknown time zone", 22023): the browser knows a zone this
+ * database's time zone data does not. The view falls back to UTC and forgets the saved zone.
+ */
+export function isTimeZoneProblem(problem: Problem): boolean {
+  return problem.code === '22023' && /time zone/i.test(problem.message);
 }
 
 /** Thrown by the data layer so callers can `catch` one type. */

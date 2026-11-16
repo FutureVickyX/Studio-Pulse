@@ -22,8 +22,10 @@ export { Badge, Banner, Card, Disclosure, EmptyState, Kbd, Skeleton, SkeletonLin
 export type { BadgeTone, BannerProps, BannerTone, CardProps, StatusTone } from './layout';
 export { Dialog, Menu, Tooltip, placeFloating } from './overlay';
 export type { AnchorRect, DialogProps, MenuItem, MenuProps, MenuTriggerProps, Placement, TooltipProps } from './overlay';
-export { BarList, ChartTooltip, ColumnChart, Legend, StatGrid, StatTile, Swatch, TimelineStrip } from './charts';
+export { AreaChart, BarList, ChartTooltip, ColumnChart, Legend, StatGrid, StatTile, Swatch, TimelineStrip } from './charts';
 export type {
+  AreaChartProps,
+  AreaDatum,
   BarListProps,
   BarListRow,
   BarListSegment,
@@ -40,4 +42,7 @@ export type {
   TimelineTick,
   TooltipAnchor,
 } from './charts';
+export { durationTicks, formatAxisDuration, timelineTicks, timelineWindow } from './scales';
+export { assignApplicationColors, colorFor, OTHER_COLOR, SERIES_COLORS, SERIES_SLOT_COUNT, TOTAL_COLOR } from './seriesColors';
+export type { ColorCandidate } from './seriesColors';
 export * from './icons';

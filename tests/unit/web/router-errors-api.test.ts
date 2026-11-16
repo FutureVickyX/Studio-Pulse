@@ -16,7 +16,15 @@ import {
   newId,
   saveNoteText,
 } from '../../../apps/web/src/lib/api';
-import { ProblemError, isNetworkError, toProblem } from '../../../apps/web/src/lib/errors';
+import {
+  ProblemError,
+  REPORT_NEEDS_MIGRATION,
+  REPORT_TOO_SLOW,
+  isNetworkError,
+  isTimeZoneProblem,
+  toProblem,
+  toReportProblem,
+} from '../../../apps/web/src/lib/errors';
 import { formatLocation, formatRoute, parseLocation, sectionOf } from '../../../apps/web/src/lib/router';
 import type { Route } from '../../../apps/web/src/lib/router';
 
@@ -33,6 +41,7 @@ describe('routes', () => {
       { name: 'notes', id: null },
       { name: 'notes', id: ID },
       { name: 'time' },
+      { name: 'analytics' },
     ];
     for (const route of routes) {
       expect(parseLocation(formatRoute(route)).route).toEqual(route);
@@ -48,6 +57,19 @@ describe('routes', () => {
     expect(parseLocation(`#/projects/${ID.toUpperCase()}`).route).toEqual({ name: 'project', id: ID });
     expect(formatLocation({ route: { name: 'notes', id: null }, taskId: ID })).toBe(`#/notes?task=${ID}`);
     expect(sectionOf({ name: 'project', id: ID })).toBe('projects');
+  });
+
+  it('analytics is its own section at #/analytics', () => {
+    expect(formatRoute({ name: 'analytics' })).toBe('#/analytics');
+    expect(parseLocation('#/analytics')).toEqual({ route: { name: 'analytics' }, taskId: null });
+    expect(parseLocation('#/analytics/').route).toEqual({ name: 'analytics' });
+    // The page has no sub-routes: anything after the section is ignored, not an error.
+    expect(parseLocation(`#/analytics/${ID}`).route).toEqual({ name: 'analytics' });
+    expect(sectionOf({ name: 'analytics' })).toBe('analytics');
+    expect(sectionOf({ name: 'time' })).toBe('time'); // Time keeps its own section
+    // An open task rides along as on every other page.
+    expect(parseLocation(`#/analytics?task=${ID}`)).toEqual({ route: { name: 'analytics' }, taskId: ID });
+    expect(formatLocation({ route: { name: 'analytics' }, taskId: ID })).toBe(`#/analytics?task=${ID}`);
   });
 });
 
@@ -85,6 +107,67 @@ describe('errors', () => {
     expect(toProblem({ code: 'P0002', message: 'project or task not found' }).kind).toBe('notFound');
     expect(toProblem({ status: 413 }).kind).toBe('invalid'); // too large: retrying cannot help
     expect(toProblem(null).kind).toBe('unknown');
+  });
+
+  it('a statement timeout is not "Something went wrong"', () => {
+    expect(toProblem({ code: '57014', message: 'canceling statement due to statement timeout' })).toEqual({
+      kind: 'unknown',
+      message: 'That took too long. Try again.',
+      code: '57014',
+    });
+  });
+});
+
+describe('analytics report errors', () => {
+  it('a timeout asks for a narrower report', () => {
+    const problem = toReportProblem({ code: '57014', message: 'canceling statement due to statement timeout' });
+    expect(problem.message).toBe('This report took too long. Choose a shorter range or add a filter.');
+    expect(problem.message).toBe(REPORT_TOO_SLOW);
+    expect(problem.code).toBe('57014');
+    expect(problem.message).not.toMatch(/statement|canceling/);
+  });
+
+  it('a database without the function says which migration is missing, neutrally', () => {
+    const problem = toReportProblem({
+      code: 'PGRST202',
+      message: 'Could not find the function public.analytics_time_summary(p_to, p_workspace_id) in the schema cache',
+    });
+    expect(problem.message).toBe('Analytics needs the latest database update. Ask the workspace owner to apply migration 10.');
+    expect(problem.message).toBe(REPORT_NEEDS_MIGRATION);
+    expect(problem.code).toBe('PGRST202');
+    expect(problem.message).not.toMatch(/schema cache|function/);
+  });
+
+  it('the function’s own 22023 sentences pass through', () => {
+    expect(toReportProblem({ code: '22023', message: 'a report covers at most 366 days' })).toEqual({
+      kind: 'invalid',
+      message: 'A report covers at most 366 days.',
+      code: '22023',
+    });
+    expect(toReportProblem({ code: '22023', message: 'choose a project or unattributed time, not both' }).message).toBe(
+      'Choose a project or unattributed time, not both.',
+    );
+  });
+
+  it('everything else is mapped as for any other request', () => {
+    expect(toReportProblem(new TypeError('Failed to fetch')).kind).toBe('network');
+    // A network failure is never read as a coded database error, whatever fields it carries.
+    expect(toReportProblem({ name: 'AuthRetryableFetchError', message: '', code: '57014' }).kind).toBe('network');
+    expect(toReportProblem({ code: '42501', message: 'permission denied for function analytics_time_summary' }).kind).toBe('permission');
+    expect(toReportProblem({ code: 'PGRST301', message: 'JWT expired' }).kind).toBe('session');
+    expect(toReportProblem(null).kind).toBe('unknown');
+  });
+
+  it('isTimeZoneProblem picks out only the refused time zone', () => {
+    const zone = toReportProblem({ code: '22023', message: 'unknown time zone' }); // the function's own sentence
+    expect(zone).toEqual({ kind: 'invalid', message: 'Unknown time zone.', code: '22023' });
+    expect(isTimeZoneProblem(zone)).toBe(true);
+    expect(isTimeZoneProblem(toReportProblem({ code: '22023', message: 'time zone "Mars/Olympus_Mons" not recognized' }))).toBe(true);
+    expect(isTimeZoneProblem(toReportProblem({ code: '22023', message: 'a report covers at most 366 days' }))).toBe(false);
+    // The words alone are not enough: it must be the function's refusal (22023).
+    expect(isTimeZoneProblem({ kind: 'unknown', message: 'Unknown time zone.' })).toBe(false);
+    expect(isTimeZoneProblem({ kind: 'invalid', message: 'Unknown time zone.', code: '23514' })).toBe(false);
+    expect(isTimeZoneProblem(toReportProblem({ code: '57014', message: 'canceling statement due to statement timeout' }))).toBe(false);
   });
 });
 

@@ -175,6 +175,7 @@ export function TimeView() {
         Foreground is the time an app was in front; active excludes idle periods. Both are measured automatically and are not billable
         time. Sessions recorded on the desktop appear here once they have synced.
       </p>
+      <p className="web-footnote">Days here group sessions by the day they started. Analytics splits sessions at midnight and counts overlapping time once, so totals can differ slightly.</p>
 
       {byProject.size > 1 || (byProject.size === 1 && !byProject.has(null)) ? (
         <Card title="By project" headingLevel={2}>

@@ -25,6 +25,7 @@ const db = useDatabase();
 
 /** Every table in `public`; the privilege suite asserts this list is complete. */
 const TABLES = [
+  'notifications', 'notification_preferences', 'workspace_automation_settings',
   'notes',
   'profiles',
   'projects',
@@ -39,6 +40,12 @@ const TABLES = [
 
 /** Every function in `public` with arguments a client could pass. */
 const RPC_CALLS: ReadonlyArray<[string, string, (world: World) => unknown[]]> = [
+  ['automation_outcomes','select public.automation_outcomes($1)',w=>[w.wsA]],
+  ['claim_automation_jobs','select public.claim_automation_jobs(10)',()=>[]],
+  ['plan_automation_jobs','select public.plan_automation_jobs(10)',()=>[]],
+  ['authorize_automation_worker','select public.authorize_automation_worker($1)',()=>['untrusted']],
+  ['finish_automation_job','select public.finish_automation_job(null,null,null)',()=>[]],
+  ['fail_automation_job',"select public.fail_automation_job(null,null,'network')",()=>[]],
   ['create_workspace', `select public.create_workspace($1)`, () => ['Anon studio']],
   [
     'create_invitation',
@@ -68,6 +75,11 @@ const RPC_CALLS: ReadonlyArray<[string, string, (world: World) => unknown[]]> = 
     'sync_time_entries',
     `select * from public.sync_time_entries($1, $2::jsonb)`,
     (w) => [w.wsA, JSON.stringify([entry()])],
+  ],
+  [
+    'analytics_time_summary',
+    `select * from public.analytics_time_summary($1, '2026-10-16', 'UTC')`,
+    (w) => [w.wsA],
   ],
   // The RLS helpers live in `private` (migration 5/5); anon has no USAGE on that schema.
   ['is_workspace_member', `select private.is_workspace_member($1)`, (w) => [w.wsA]],
@@ -108,7 +120,7 @@ describe('anon key', () => {
       '42501',
       PERMISSION_DENIED,
     );
-    const column = table === 'workspace_members' ? 'role' : 'id';
+    const column = table === 'workspace_members' ? 'role' : table === 'notification_preferences' || table === 'workspace_automation_settings' ? 'workspace_id' : 'id';
     fails(
       await db().query('anon', `update public.${table} set ${column} = ${column}`),
       '42501',
@@ -154,6 +166,13 @@ describe('the authenticated role without a user id (no sub claim)', () => {
         world.wsA,
         JSON.stringify([entry()]),
       ]),
+      '28000',
+    );
+  });
+
+  it('cannot read analytics (28000)', async () => {
+    fails(
+      await asNoSub(`select * from public.analytics_time_summary($1, '2026-10-16', 'UTC')`, [world.wsA]),
       '28000',
     );
   });

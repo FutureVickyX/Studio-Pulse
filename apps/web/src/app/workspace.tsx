@@ -69,6 +69,9 @@ export function refreshTable(workspaceId: string, table: WatchedTable | 'time' |
       break;
     case 'tasks':
       invalidate(`${ws}tasks`);
+      // Moving a task to another project moves its tracked time with it (tasks_move_time), so
+      // project time and analytics totals (`time:analytics:…`) can change too.
+      invalidate(`${ws}time:`);
       break;
     case 'task_subtasks':
     case 'task_comments':

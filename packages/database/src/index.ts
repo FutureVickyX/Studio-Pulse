@@ -58,3 +58,6 @@ export type { StudioPulseClient, StudioPulseClientOptions } from './client';
 
 export { SYNC_TIME_ENTRIES_MAX_BATCH } from './sync';
 export type { SyncTimeEntryPayload, SyncTimeEntryResult } from './sync';
+
+export { AUTOMATION_DEFAULTS, NOTIFICATION_KINDS, readAutomationPreferences } from './automation';
+export type { AutomationPreferences, NotificationKind } from './automation';

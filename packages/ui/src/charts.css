@@ -375,20 +375,24 @@
   overflow: visible;
 }
 
-.sp-columns__grid {
+.sp-columns__grid,
+.sp-area__grid {
   stroke: var(--sp-viz-grid);
   stroke-width: 1;
   shape-rendering: crispEdges;
 }
 
-.sp-columns__baseline {
+.sp-columns__baseline,
+.sp-area__baseline {
   stroke: var(--sp-viz-axis);
   stroke-width: 1;
   shape-rendering: crispEdges;
 }
 
 .sp-columns__ylabel,
-.sp-columns__xlabel {
+.sp-columns__xlabel,
+.sp-area__ylabel,
+.sp-area__xlabel {
   fill: var(--sp-text-faint);
   font-family: var(--sp-font-ui);
   font-size: var(--sp-text-xs);
@@ -397,7 +401,8 @@
 
 /* Category labels (weekday names, day numbers) read as labels; the y values are durations and
    keep their case ("2h", not "2H"). */
-.sp-columns__xlabel {
+.sp-columns__xlabel,
+.sp-area__xlabel {
   font-weight: 500;
   letter-spacing: var(--sp-caps-tracking);
   text-transform: uppercase;
@@ -434,9 +439,63 @@
   stroke-width: 1.5;
 }
 
-.sp-columns:focus-visible {
+.sp-columns:focus-visible,
+.sp-area:focus-visible {
   outline-offset: 4px;
   border-radius: var(--sp-radius-md);
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* Area chart (one series, SVG): a 2 px line over a ~10% wash of the same colour (`--c`)       */
+/* ------------------------------------------------------------------------------------------ */
+
+.sp-area {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.sp-area svg {
+  display: block;
+  overflow: visible;
+}
+
+.sp-area__wash {
+  fill: var(--c, var(--sp-viz-total));
+  fill-opacity: 0.1;
+}
+
+.sp-area__line {
+  fill: none;
+  stroke: var(--c, var(--sp-viz-total));
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* The crosshair is recessive (axis tone); under keyboard focus it takes the focus colour. */
+.sp-area__crosshair {
+  stroke: var(--sp-viz-axis);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+  pointer-events: none;
+}
+
+.sp-area__crosshair[data-focus='true'] {
+  stroke: var(--sp-focus);
+}
+
+/* The point under the crosshair, ringed in the surface colour so it separates from the line. */
+.sp-area__dot {
+  fill: var(--c, var(--sp-viz-total));
+  stroke: var(--sp-viz-gap);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.sp-area__hit {
+  fill: transparent;
+  cursor: crosshair;
 }
 
 .sp-chart-tip__row {
@@ -455,13 +514,15 @@
 .sp-barlist,
 .sp-timeline,
 .sp-columns,
+.sp-area,
 .sp-stats {
   transition: opacity var(--sp-duration) var(--sp-ease);
 }
 
 .sp-barlist[data-stale='true'],
 .sp-timeline[data-stale='true'],
-.sp-columns[data-stale='true'] {
+.sp-columns[data-stale='true'],
+.sp-area[data-stale='true'] {
   opacity: 0.6;
 }
 

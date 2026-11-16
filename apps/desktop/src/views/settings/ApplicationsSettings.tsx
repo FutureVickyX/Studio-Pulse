@@ -335,7 +335,7 @@ function ApplicationRow({
       </span>
       <span className="app-apps__switch">
         <label htmlFor={reportsId} className="sp-visually-hidden">
-          Show {app.displayName} in reports
+          Show {app.displayName} in this device’s reports
         </label>
         <Switch
           id={reportsId}
@@ -817,7 +817,7 @@ function AddApplicationDialog({
           <MatcherEditor drafts={drafts} onChange={setDrafts} showErrors={showErrors} />
           <div className="app-add-form__checks">
             <Checkbox checked={enabled} onChange={setEnabled} label="Track this application" />
-            <Checkbox checked={includeInReports} onChange={setIncludeInReports} label="Show it in reports" />
+            <Checkbox checked={includeInReports} onChange={setIncludeInReports} label="Show it in this device’s reports" />
           </div>
         </form>
       )}

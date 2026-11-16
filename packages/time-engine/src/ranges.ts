@@ -22,7 +22,7 @@ const PRESET_SPANS: Readonly<Record<Exclude<RangePreset, 'custom'>, { back: numb
   last30: { back: 0, days: 30, label: 'Last 30 days' },
 };
 
-/** Resolve a preset to local-day boundaries in `timeZone` (DST-safe: days may be 23 or 25 h). */
+/** Resolve a preset to local-day boundaries in `timeZone` (DST-safe: a day may be shorter or longer than 24 h). */
 export function resolveRange(preset: RangePreset, options: ResolveRangeOptions): DateRange {
   const { now, timeZone } = options;
   const locale = options.locale ?? DEFAULT_LOCALE;
