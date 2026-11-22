@@ -55,6 +55,9 @@ const NAV: ReadonlyArray<{ section: Section; label: string; icon: ReactNode; rou
 export function Shell({ membersProblem, onRetryMembers }: { membersProblem: Problem | null; onRetryMembers: () => void }) {
   const { client, workspace, nav } = useWorkspace();
   useAutomationRefresh();
+  // Delivery is in-app only, so the unread count must stay visible when the sidebar is hidden (phone widths).
+  // Same query key as the sidebar badge, so this shares its cached feed.
+  const unread = useNotificationFeed().data?.unread ?? 0;
   const { location } = nav;
   const { route, taskId } = location;
   const section = sectionOf(route);
@@ -83,6 +86,14 @@ export function Shell({ membersProblem, onRetryMembers }: { membersProblem: Prob
         <IconButton label={menuOpen ? 'Close menu' : 'Open menu'} icon={menuOpen ? <IconClose size={16} /> : <IconMore size={16} />} onClick={() => setMenuOpen((v) => !v)} />
         <BrandMark size={18} />
         <span className="web-topbar__title">{workspace.name}</span>
+        <span className="web-topbar__notices">
+          <IconButton
+            label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+            icon={<IconBell size={16} />}
+            onClick={() => nav.navigate({ name: 'notifications' })}
+          />
+          {unread > 0 ? <span aria-hidden="true"><Badge tone="accent">{unread}</Badge></span> : null}
+        </span>
       </header>
       <Sidebar section={section} />
       <main className="web-main" ref={mainRef} tabIndex={-1}>

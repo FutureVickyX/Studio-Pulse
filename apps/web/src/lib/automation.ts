@@ -5,6 +5,13 @@ import { ProblemError, toProblem } from './errors';
 export type Notification = Tables<'notifications'>;
 export type WorkspaceAutomation = Pick<Tables<'workspace_automation_settings'>,'enabled'|'events_enabled'|'reminders_enabled'|'digests_enabled'>;
 export const WORKSPACE_AUTOMATION_DEFAULTS: WorkspaceAutomation = {enabled:true,events_enabled:true,reminders_enabled:true,digests_enabled:true};
+/** The only columns members may write (column-level grants); sending any other key fails the whole PATCH with 42501. */
+const WORKSPACE_AUTOMATION_COLUMNS='enabled,events_enabled,reminders_enabled,digests_enabled';
+function workspaceAutomationBody(value:WorkspaceAutomation):WorkspaceAutomation {
+  return {enabled:value.enabled,events_enabled:value.events_enabled,reminders_enabled:value.reminders_enabled,digests_enabled:value.digests_enabled};
+}
+/** PostgREST's timestamptz text (microseconds kept). Re-serialising through Date would truncate to milliseconds. */
+const CURSOR_TIMESTAMP=/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}(:?\d{2})?)$/;
 export const NOTICE_LABELS: Record<Notification['kind'],string> = {
   assigned:'Task assigned',review:'Ready for review',completed:'Task completed',due_soon:'Due soon',due_today:'Due today',
   overdue:'Overdue task',awaiting_review:'Awaiting review',inactive:'Needs attention',daily:'Daily summary',weekly:'Weekly summary',
@@ -19,8 +26,9 @@ export async function notificationPage(client: StudioPulseClient, workspace: str
   let query=client.from('notifications').select('*').eq('workspace_id',workspace).eq('recipient_id',user)
     .order('created_at',{ascending:false}).order('id',{ascending:false}).limit(51);
   if(before){
-    const date=new Date(before.created_at).toISOString();
-    if(!/^[0-9a-f-]{36}$/i.test(before.id))throw new Error('Invalid notification cursor');
+    // Sent verbatim: the format check excludes quotes, commas and parentheses, so the value is safe in the quoted or() filter.
+    const date=before.created_at;
+    if(!CURSOR_TIMESTAMP.test(date)||!/^[0-9a-f-]{36}$/i.test(before.id))throw new Error('Invalid notification cursor');
     query=query.or(`created_at.lt."${date}",and(created_at.eq."${date}",id.lt.${before.id})`);
   }
   const {data,error}=await query;
@@ -67,23 +75,25 @@ export async function saveAutomationPreferences(client:StudioPulseClient,workspa
   return readAutomationPreferences(result.data.config);
 }
 export async function workspaceAutomation(client:StudioPulseClient,workspace:string):Promise<WorkspaceAutomation> {
-  const result=await client.from('workspace_automation_settings').select('*').eq('workspace_id',workspace).maybeSingle();
+  const result=await client.from('workspace_automation_settings').select(WORKSPACE_AUTOMATION_COLUMNS).eq('workspace_id',workspace).maybeSingle();
   if(result.error)fail(result.error);
-  return result.data??WORKSPACE_AUTOMATION_DEFAULTS;
+  return result.data?workspaceAutomationBody(result.data):WORKSPACE_AUTOMATION_DEFAULTS;
 }
 export async function saveWorkspaceAutomation(client:StudioPulseClient,workspace:string,value:WorkspaceAutomation) {
-  const update=()=>client.from('workspace_automation_settings').update(value).eq('workspace_id',workspace).select('*').maybeSingle();
+  const body=workspaceAutomationBody(value);
+  const update=()=>client.from('workspace_automation_settings').update(body).eq('workspace_id',workspace).select(WORKSPACE_AUTOMATION_COLUMNS).maybeSingle();
   let result=await update();
   if(result.error)fail(result.error);
   if(!result.data){
-    result=await client.from('workspace_automation_settings').insert({...value,workspace_id:workspace}).select('*').single();
+    result=await client.from('workspace_automation_settings').insert({...body,workspace_id:workspace}).select(WORKSPACE_AUTOMATION_COLUMNS).single();
     if(result.error?.code==='23505')result=await update();
     if(result.error)fail(result.error);
   }
   if(!result.data)fail({code:'42501'});
-  return result.data;
+  return workspaceAutomationBody(result.data);
 }
-export interface AutomationOutcome {id:string;kind:string;state:string;attempts:number;created_at:string;run_after:string;completed_at:string|null;failed_at:string|null;last_error:string|null}
+/** From migration 14: created_at is day-level, run_after and completed_at are null, and preference skips read as completed. */
+export interface AutomationOutcome {id:string;kind:string;state:string;attempts:number;created_at:string;run_after:string|null;completed_at:string|null;failed_at:string|null;last_error:string|null}
 export async function automationOutcomes(client:StudioPulseClient,workspace:string):Promise<AutomationOutcome[]> {
   const result=await client.rpc('automation_outcomes',{p_workspace_id:workspace});
   if(result.error)fail(result.error);

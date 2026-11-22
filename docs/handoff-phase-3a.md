@@ -3,6 +3,19 @@
 For whoever continues from here (Codex or a person). What Phase 3A built, what was decided, what
 was checked, and what is still open. The rules themselves are in [analytics.md](analytics.md).
 
+> **Status after Phase 3B (15–16 November 2026).** This report describes the branch as committed
+> (`7897fdd`) and is kept as written. Several of its statements are now out of date:
+> - Migration 10 **is applied** to `studio-pulse-dev`, recorded under its file version, and the
+>   hosted catalog confirms `analytics_time_summary` is `SECURITY INVOKER` (§4 still says "No").
+> - The advisors were reviewed after Phase 3B ([handoff-phase-3b.md](handoff-phase-3b.md)).
+> - Analytics was used signed in, in Chrome at 1280 px and 390 px, against the hosted project, and
+>   hosted daily/weekly summaries matched the authenticated RPC (in UTC). §7's "not run" items
+>   about a live check are superseded by those runs.
+> - The automation hook in §9 is built: Phase 3B's Edge worker calls `summarizeReport` on the
+>   recipient's own rows ([automation.md](automation.md)).
+> - The `feat/phase-3a-analytics` branch is the base of `feat/phase-3b-automation`; the Phase 3C
+>   integration review is in [handoff-phase-3c.md](handoff-phase-3c.md).
+
 ## 1. Branch and commit
 
 | | |

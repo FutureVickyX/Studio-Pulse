@@ -479,8 +479,20 @@ describe('functions', () => {
       `select relname as name from pg_class where relnamespace = 'private'::regnamespace and relkind in ('r','p') order by relname`,
     );
     expect(objects).toEqual(['automation_attempts','automation_jobs','automation_schedules','automation_worker_keys','task_automation_state'].map(name=>({name})));
-    const exposed=await db().admin(`select relname from pg_class where relnamespace='private'::regnamespace and relkind='r' and (not relrowsecurity or has_table_privilege('authenticated',oid,'SELECT') or has_table_privilege('anon',oid,'SELECT'))`);
+    // Every privilege, table- or column-level, for each client role and PUBLIC: a stray write grant
+    // on the outbox would let a client queue forged notices.
+    const exposed = await db().admin<{ relname: string; role: string }>(
+      `select c.relname, r.role from pg_class c
+        cross join unnest(array['anon', 'authenticated', '${NOBODY}']) as r(role)
+        where c.relnamespace = 'private'::regnamespace and c.relkind in ('r', 'p')
+          and (not c.relrowsecurity
+            or has_table_privilege(r.role, c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+            or has_any_column_privilege(r.role, c.oid, 'SELECT,INSERT,UPDATE,REFERENCES'))
+        order by 1, 2`,
+    );
     expect(exposed).toEqual([]);
+    // No policy at all: RLS with no policy is what keeps the private tables closed.
+    expect(await db().admin(`select tablename, policyname from pg_policies where schemaname = 'private'`)).toEqual([]);
   });
 
   it('the RLS helpers are not callable under public (no /rest/v1/rpc endpoint)', async () => {

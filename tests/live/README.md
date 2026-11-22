@@ -3,8 +3,10 @@
 Not part of `npm test`: they need the network, a project with every migration applied, and three
 confirmed throwaway users. They run the web workspace's data layer
 (`apps/web/src/lib/api.ts`) exactly as the UI does, through the publishable key and each user's own
-session. The provisioning operator deletes test workspaces and users afterwards; authenticated
-clients intentionally have no workspace DELETE permission.
+session. The workspace suite deletes its own workspace through the owner's session (owners may
+delete a workspace; the delete cascades to all of its data). The automation suite keeps its
+workspace for inspection and records its exact IDs; the provisioning operator deletes that
+workspace and all the disposable users afterwards.
 
 ```bash
 SUPABASE_URL=https://<ref>.supabase.co \

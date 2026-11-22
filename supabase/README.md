@@ -1,19 +1,13 @@
-# supabase/ — Phase 2
+# supabase/
 
-Versioned Postgres migrations, RLS policies, edge functions and seed data for the shared
-workspace. Not implemented in Phase 1.
+Versioned Postgres migrations (`migrations/`), the automation scheduler's operator SQL
+(`automation/`) and the Edge function configuration (`config.toml`) for the shared workspace.
+The worker's source is `server/automation`; `npm run build:automation` writes the deployable,
+gitignored `functions/automation-worker/index.ts`.
 
-Planned tables (requirement §17): `profiles`, `workspaces`, `workspace_members`,
-`workspace_invitations`, `projects`, `tasks`, `task_comments`, `notes`, `note_tags`,
-`applications`, `device_registrations`, `tracking_events`, `manual_time_entries`,
-`task_time_assignments`, `user_preferences`, `workspace_settings`.
+- Setup, migration order, RLS and sync: [docs/supabase.md](../docs/supabase.md)
+- Analytics function: [docs/analytics.md](../docs/analytics.md)
+- Notifications, scheduler deployment and verification: [docs/automation.md](../docs/automation.md)
 
-Design commitments carried over from Phase 1 (docs/architecture.md §14):
-
-- `tracking_events.id` is the client-generated UUIDv7: the server upserts by id and keeps the
-  highest `revision`, so sync retries cannot duplicate intervals.
-- Detailed tracking rows are readable only by their owner. Team reports read aggregated views
-  governed by `workspace_settings.tracking_visibility`.
-- Every workspace-owned row carries `workspace_id`. RLS checks membership through
-  `workspace_members`. Client-supplied workspace ids are never trusted.
-- No service-role key ever ships in client code.
+Never edit an applied migration; add a new one. No service-role or secret key belongs in this
+folder, the apps or any bundle.

@@ -50,20 +50,22 @@ studio-pulse/
 │   │   │   ├── tests/           Rust integration tests
 │   │   │   └── examples/probe.rs  CLI probe for manual Windows verification
 │   │   └── package.json
-│   └── web/                     Team workspace (Phase 2B): React + Vite static app on Supabase
+│   └── web/                     Team workspace (Phases 2B–3B): React + Vite static app on Supabase
 ├── packages/
 │   ├── shared-types/            TS mirror of every Rust⇄UI payload + default app registry JSON
 │   ├── validation/              zod schemas for settings, app definitions, command inputs
 │   ├── time-engine/             TS reporting maths: ranges, time zones, day-splitting, aggregation
 │   ├── database/                Typed Supabase client factory, Database types, key validation
 │   └── ui/                      design tokens + React primitives + SVG charts
-├── supabase/migrations/         Postgres schema, RLS policies and RPCs (Phases 2A and 2B)
+├── server/automation/          Scheduled automation worker (Phase 3B), bundled into an Edge function
+├── supabase/migrations/         Postgres schema, RLS policies and RPCs (Phases 2A–3C)
+├── supabase/automation/         Operator SQL: scheduler installer and checks (Phase 3B)
 ├── tests/
 │   ├── unit/                    vitest suites for the TS packages
 │   ├── integration/             vitest suites that cross package boundaries, incl. RLS on PGlite
 │   ├── live/                    opt-in suites against a real Supabase project
 │   └── fixtures/tracking/       JSON scenario traces replayed by the Rust engine tests
-└── docs/                        architecture, installation, privacy, testing
+└── docs/                        architecture, installation, privacy, Supabase, workspace, analytics, automation, testing
 ```
 
 **Deviation from the requested tree:** `tauri.conf.json` lives in `apps/desktop/src-tauri/`, not

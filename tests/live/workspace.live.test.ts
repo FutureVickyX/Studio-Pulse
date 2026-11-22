@@ -6,8 +6,9 @@
  * Environment (tests/live/README.md):
  *   SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY   public values
  *   SP_LIVE_USERS_FILE                       JSON {users:[{label:'a'|'b'|'c', email, password, id}]}
- * The provisioning operator deletes disposable workspaces and users after the run. Clients
- * intentionally have no workspace DELETE grant.
+ * The suite deletes its own workspace through the owner's session (RLS workspaces_delete lets an
+ * owner delete a workspace, cascading all of its data); the provisioning operator deletes only the
+ * disposable users afterwards.
  */
 
 import { readFileSync } from 'node:fs';
@@ -77,9 +78,17 @@ describe.skipIf(!configured)('workspace data layer on the real project', () => {
   });
 
   afterAll(async () => {
-    // The provisioning operator removes this workspace and the disposable users. Clients have
-    // no workspace DELETE grant; an unchecked delete here previously left a misleading cleanup.
-    await Promise.all([owner, member, outsider].filter(Boolean).map((c) => c.auth.signOut({ scope: 'local' })));
+    // Owners may delete their workspace (RLS workspaces_delete, cascading its data). The delete is
+    // checked, and sign-out runs even if it fails; the operator then deletes the disposable users.
+    try {
+      if (owner && workspaceId) {
+        const { error, count } = await owner.from('workspaces').delete({ count: 'exact' }).eq('id', workspaceId);
+        expect(error).toBeNull();
+        expect(count).toBe(1);
+      }
+    } finally {
+      await Promise.all([owner, member, outsider].filter(Boolean).map((c) => c.auth.signOut({ scope: 'local' })));
+    }
   });
 
   it('lists the workspace and its members for members only', async () => {

@@ -164,6 +164,21 @@ describe('allowlist', () => {
     // An entry with no selector excuses nothing.
     expect(allowedBy(webIndex, 'sb-secret-prefix', [{ kinds: ['sb-secret-prefix'], reason: 'x' }])).toBeUndefined();
   });
+
+  it('excuses only the two reference kinds in the generated automation worker bundle, at its exact path', () => {
+    const worker = join(REPO_ROOT, 'supabase/functions/automation-worker/index.ts');
+    expect(allowedBy(worker, 'sb-secret-prefix', DEFAULT_ALLOWLIST)).toBeDefined();
+    expect(allowedBy(worker, 'service-role-mention', DEFAULT_ALLOWLIST)).toBeDefined();
+    expect(allowedBy(worker, 'secret-key-env-name', DEFAULT_ALLOWLIST)).toBeUndefined();
+    expect(allowedBy(worker, 'db-url-env-name', DEFAULT_ALLOWLIST)).toBeUndefined();
+    for (const kind of LEAK_KINDS) {
+      expect(allowedBy(worker, kind, DEFAULT_ALLOWLIST), kind).toBeUndefined();
+    }
+    // Not its source, not another function, not a copy elsewhere.
+    expect(allowedBy(join(REPO_ROOT, 'server/automation/entry.ts'), 'service-role-mention', DEFAULT_ALLOWLIST)).toBeUndefined();
+    expect(allowedBy(join(REPO_ROOT, 'supabase/functions/other/index.ts'), 'sb-secret-prefix', DEFAULT_ALLOWLIST)).toBeUndefined();
+    expect(allowedBy(join(tmpdir(), 'supabase/functions/automation-worker/index.ts'), 'sb-secret-prefix', DEFAULT_ALLOWLIST)).toBeUndefined();
+  });
 });
 
 describe('scanFiles and the command line', () => {

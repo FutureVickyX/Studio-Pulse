@@ -62,6 +62,7 @@ Migrations live in `supabase/migrations/` and run in filename order:
 | `20261112120000_automation_foundation.sql` | Phase 3B. Recipient-private notifications/preferences, administrator workspace switches, private jobs/leases/attempts, task event triggers and service-only worker operations |
 | `20261112120100_automation_scheduling.sql` | Phase 3B. Calendar planner, quiet hours, date-only deadlines, digest occurrences, comment activity and notification Realtime |
 | `20261112120200_automation_scheduler_extensions.sql` | Phase 3B. Enables available hosting extensions (`pg_cron`, `pg_net`) and restricts HTTP queue access; creates no schedule or credential |
+| `20261119090000_automation_hardening.sql` | Phase 3C integration fixes. Preferences stored canonically (integer settings as integers, tz-database zone spelling) and read defensively; the planner isolates each membership, so one unusable schedule cannot stop planning for every workspace; a reminder hour inside quiet hours is planned when quiet hours end; a time-zone change retires pending calendar jobs from the old zone; claiming tolerates a requeued job; administrator outcomes no longer reveal members' private preferences. Redefines functions only: no table, policy or grant changes |
 
 Phase 3B hosting is a separate explicit step: [automation.md](automation.md). The client needs
 no new key. The Edge worker uses its built-in server credential; cron uses a limited key generated
@@ -191,7 +192,8 @@ configured in this build. Debug builds also read the two variables at runtime.
   `owner_id` on update, `time_entry_visibility`, `token_hash`, and so on.
 - **Membership is never client-written.** `workspace_members` and `workspace_invitations` have no
   insert, update or delete policies. Changes go through `SECURITY DEFINER` functions that check
-  the caller's role first. Supabase's security advisor flags these eight (lint 0029, "callable by
+  the caller's role first. Supabase's security advisor flags these eight, plus Phase 3B's
+  administrator-checked `automation_outcomes(ws)` (nine in all; lint 0029, "callable by
   signed-in users"); that is intended, because they are the API:
 
 | Function | Who |
@@ -204,6 +206,7 @@ configured in this build. Debug builds also read the two variables at runtime.
 | `remove_member(ws, user)` | owner (anyone but the last owner), admin (members), anyone (leave, unless last owner) |
 | `set_time_entry_visibility(ws, v)` | owner |
 | `my_workspaces()` | the caller's active memberships |
+| `automation_outcomes(ws)` | owner/admin. Phase 3B job metadata without recipients, titles, payloads or private timing ([automation.md](automation.md)) |
 
 - **RLS helpers are not API.** `is_workspace_member`, `has_workspace_role`, `is_active_member` and
   `shares_workspace_with` live in a `private` schema. Policies call them, but PostgREST serves only
@@ -291,8 +294,12 @@ Every instant is stored as a UTC `timestamptz` remotely and as UTC epoch millise
 time entry's duration is `ended_at − started_at`, and the database enforces
 `active_ms + idle_ms = duration`. Days, weeks and labels are computed in the viewer's local time
 zone at display time, using `@studio-pulse/time-engine`, which is DST-safe. Analytics (§5,
-migration 10) is the one place the server groups time into days: in the IANA zone each request
-names, which the web app takes from the viewer's reporting time zone and the server does not store.
+migration 10) groups time into days in the IANA zone each request names, which the web app takes
+from the viewer's reporting time zone and the server does not store. Since Phase 3B the automation
+planner and the daily/weekly summaries also group by local day, in the zone stored in each
+member's `notification_preferences.config` ([automation.md](automation.md)). The planner uses
+Postgres's time zone data; the summary worker uses the Edge runtime's, which can disagree with
+Postgres for zones whose rules changed recently ([analytics.md](analytics.md) lists known cases).
 
 ## 8. What is uploaded
 
@@ -369,4 +376,5 @@ Phase 2B (`tests/integration/supabase/collaboration.test.ts` and the updated sui
 | "Archived projects take no new time" | Restore the project (or task) before attributing time to it |
 | "Only the note's owner can change its sharing, project, pin or archive state" | Ask the owner to change it |
 | "Analytics needs the latest database update…" | Migration 10 isn't applied (`PGRST202`, function not found). Apply it (§2) |
+| "Notifications need the latest database migrations…" | The Phase 3B automation migrations aren't applied (`PGRST205`/`PGRST202`). Apply them (§2), then deploy the scheduler ([automation.md](automation.md)) |
 | "This report took too long. Choose a shorter range or add a filter." | The statement timed out (`57014`). Owner and admin reports over long ranges are the slowest, because RLS checks every row |

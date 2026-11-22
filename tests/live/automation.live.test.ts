@@ -61,8 +61,8 @@ describe.skipIf(!configured)('automation on the real development project',()=>{
  });
  afterAll(async()=>{
    await Promise.all([owner,member,outsider].filter(Boolean).map(client=>client.auth.signOut({scope:'local'})));
-   // Workspace/user deletion is performed by the provisioning operator, using the recorded
-   // exact IDs. Authenticated clients deliberately have no workspace DELETE privilege.
+   // The workspace is kept for the operator to inspect scheduled delivery, then deleted with the
+   // disposable users using the recorded exact IDs. (Owners could delete it through RLS.)
  });
  it('receives assignment, deadline and daily/weekly digests from the actual server schedule',async()=>{
    const userId=users.find(u=>u.label==='b')!.id;

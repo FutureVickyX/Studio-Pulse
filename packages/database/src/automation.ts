@@ -24,7 +24,14 @@ export function readAutomationPreferences(value: Json): AutomationPreferences {
     }
     if (name === 'timezone') {
       if (typeof item !== 'string' || !/^(UTC|[A-Za-z]+(\/[A-Za-z0-9_+-]+)+)$/.test(item)) throw new Error('Choose an IANA time zone');
-      try { new Intl.DateTimeFormat('en', { timeZone: item }).format(); } catch { throw new Error('Choose a valid time zone'); }
+      let canonical: string;
+      try { canonical = new Intl.DateTimeFormat('en', { timeZone: item }).resolvedOptions().timeZone; } catch { throw new Error('Choose a valid time zone'); }
+      // Intl matches names case-insensitively but the server stores the exact tz-database spelling.
+      // Only a case-only difference is taken over, so an alias the server's tzdata may lack is never swapped in.
+      if (canonical.toLowerCase() === item.toLowerCase()) {
+        Object.assign(output, { timezone: canonical });
+        continue;
+      }
     }
     Object.assign(output, { [name]: item });
   }

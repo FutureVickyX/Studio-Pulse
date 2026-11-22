@@ -2,7 +2,6 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database, Json, StudioPulseClient } from '@studio-pulse/database';
 import { addDays, startOfLocalDay } from '@studio-pulse/time-engine';
 import type { ReportInterval } from '@studio-pulse/time-engine';
-import { listAll } from '../../apps/web/src/lib/api';
 import { buildDigest } from './digest';
 
 interface Job {
@@ -11,13 +10,26 @@ interface Job {
 }
 interface Config { url: string | undefined; serviceKey: string | undefined }
 const MAX_ROWS = 100_000;
+/** PostgREST's default max-rows: a shorter page is the last one. */
+const PAGE_ROWS = 1000;
 function checked<T>(result: { data: T | null; error: unknown }): T {
   if (result.error || result.data === null) throw new Error('database_request_failed');
   return result.data;
 }
-function bounded<T>(rows: T[]): T[] {
-  if (rows.length > MAX_ROWS) throw new Error('report_limit_exceeded');
-  return rows;
+/**
+ * Keyset pages by id. Offset paging could skip a surviving row when the recipient deletes rows
+ * between two pages, silently under-reporting the summary.
+ */
+async function listByKey<T extends { id: string }>(page: (after: string | null, limit: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+  const rows: T[] = [];
+  for (let after: string | null = null; ;) {
+    const batch: T[] = checked(await page(after, PAGE_ROWS));
+    rows.push(...batch);
+    if (rows.length > MAX_ROWS) throw new Error('report_limit_exceeded');
+    const last: T | undefined = batch.at(-1);
+    if (!last || batch.length < PAGE_ROWS) return rows;
+    after = last.id;
+  }
 }
 
 async function summary(client: StudioPulseClient, job: Job) {
@@ -28,13 +40,24 @@ async function summary(client: StudioPulseClient, job: Job) {
   const from = startOfLocalDay(addDays(job.payload.localDate,kind==='daily'?-1:-7),job.payload.timezone);
   const to = startOfLocalDay(job.payload.localDate,job.payload.timezone);
   // The server's privilege is confined to the claimed recipient and workspace on every read.
-  const entries = bounded(await listAll((a,b)=>client.from('time_entries').select('*')
-    .eq('workspace_id',job.workspace_id).eq('user_id',job.recipient_id)
-    .gte('started_at',new Date(from-744*3_600_000).toISOString()).lt('started_at',new Date(to).toISOString())
-    .gt('ended_at',new Date(from).toISOString()).order('id').range(a,b),MAX_ROWS+1));
-  const tasks = bounded(await listAll((a,b)=>client.from('tasks').select('*').eq('workspace_id',job.workspace_id)
-    .eq('assignee_id',job.recipient_id).order('id').range(a,b),MAX_ROWS+1));
-  const projects = bounded(await listAll((a,b)=>client.from('projects').select('*').eq('workspace_id',job.workspace_id).order('id').range(a,b),MAX_ROWS+1));
+  const entries = await listByKey((after,limit)=>{
+    let query=client.from('time_entries').select('*')
+      .eq('workspace_id',job.workspace_id).eq('user_id',job.recipient_id)
+      .gte('started_at',new Date(from-744*3_600_000).toISOString()).lt('started_at',new Date(to).toISOString())
+      .gt('ended_at',new Date(from).toISOString());
+    if(after!==null)query=query.gt('id',after);
+    return query.order('id').limit(limit);
+  });
+  const tasks = await listByKey((after,limit)=>{
+    let query=client.from('tasks').select('*').eq('workspace_id',job.workspace_id).eq('assignee_id',job.recipient_id);
+    if(after!==null)query=query.gt('id',after);
+    return query.order('id').limit(limit);
+  });
+  const projects = await listByKey((after,limit)=>{
+    let query=client.from('projects').select('*').eq('workspace_id',job.workspace_id);
+    if(after!==null)query=query.gt('id',after);
+    return query.order('id').limit(limit);
+  });
   const intervals: ReportInterval[] = entries.map(row=>({ id:row.id, userId:row.user_id,deviceId:row.device_id,
     applicationId:row.application_id,applicationName:row.application_name,kind:row.kind,
     startMs:Date.parse(row.started_at),endMs:Date.parse(row.ended_at),projectId:row.project_id,taskId:row.task_id }));
@@ -56,7 +79,10 @@ export function createAutomationWorker(config: Config, makeClient: (url: string,
       // The service credential never arrives in a scheduled HTTP request. Only this bounded
       // invocation key is sent; its hash is checked by a service-only RPC before any job runs.
       if(!checked(await client.rpc('authorize_automation_worker',{p_credential:credential})))return respond(401,{error:'unauthorized'});
-      checked(await client.rpc('plan_automation_jobs',{p_limit:100}));
+      // A planning failure must not stop delivery of jobs already queued for every other workspace.
+      // It is reported in the status and the run line, so pg_net's response log shows it.
+      let planningFailed=false;
+      try{checked(await client.rpc('plan_automation_jobs',{p_limit:100}));}catch{planningFailed=true;}
       const raw=checked(await client.rpc('claim_automation_jobs',{p_limit:10}));
       if(!Array.isArray(raw))throw new Error('invalid_job_batch');
       const counts={completed:0,skipped:0,deferred:0,failed:0};
@@ -69,12 +95,20 @@ export function createAutomationWorker(config: Config, makeClient: (url: string,
           if(result==='completed'||result==='skipped'||result==='deferred')counts[result]++;
           else throw new Error('invalid_delivery_result');
         }catch{
-          counts.failed++;
           // Never persist an exception message, credential, note, task body or raw time entry.
-          await client.rpc('fail_automation_job',{p_id:job.id,p_token:job.claim_token,p_code:job.kind==='daily'||job.kind==='weekly'?'reporting_failed':'delivery_failed'});
+          const failed=await client.rpc('fail_automation_job',{p_id:job.id,p_token:job.claim_token,p_code:job.kind==='daily'||job.kind==='weekly'?'reporting_failed':'delivery_failed'});
+          // 40001: the claim is no longer this run's. If the delivery committed and only its response
+          // was lost, finish returns the terminal state without a claim check; count what happened.
+          const settled=(failed.error as {code?:string}|null)?.code==='40001'
+            ?await client.rpc('finish_automation_job',{p_id:job.id,p_token:job.claim_token,p_summary:null}):null;
+          if(settled&&!settled.error&&(settled.data==='completed'||settled.data==='skipped'))counts[settled.data]++;
+          else counts.failed++;
         }
       }
-      return respond(200,counts);
+      // One line per run with counts only: no ids, tokens, payloads or recipients.
+      console.log(JSON.stringify({event:'automation_run',planning:planningFailed?'failed':'ok',...counts}));
+      // Per-job failures stay database-managed retries (200); only a planning failure changes the status.
+      return planningFailed?respond(503,{error:'planning_failed',...counts}):respond(200,counts);
     }catch{
       return respond(503,{error:'automation_temporarily_unavailable'});
     }

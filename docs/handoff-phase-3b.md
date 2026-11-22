@@ -61,7 +61,7 @@ reporting and other workspace policies were not widened.
 | Additional notification/settings rendering tests | **5 passed**; fixtures confined to tests |
 | Final preference hardening + worker/view rerun | **13 passed**; a prototype-key validation regression was first reproduced, then fixed |
 | Full workspace/root TypeScript checks | Passed |
-| Rust regression suite | Passed: **355 tests**, **11 live tests ignored** by default |
+| Rust regression suite | Passed. *Corrected in Phase 3C:* the Rust tree is unchanged since Phase 3A, and `npm run test:rust` rerun on 22 November 2026 reports **365 passed, 0 failed, 12 ignored by design** (9 interactive desktop, 1 Credential Manager, 2 live Supabase). The figure first recorded here (355 passed, 11 ignored) did not match a full run |
 | Rust formatting and Clippy `--all-targets -- -D warnings` | Passed |
 | Real Windows foreground, native idle and interactive-session tests | **3 passed**, explicitly run despite their default ignored status |
 | Web production build with public dev configuration | Passed; existing large-chunk/config-loader warnings remain |

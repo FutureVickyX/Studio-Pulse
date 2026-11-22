@@ -1,0 +1,416 @@
+# Phase 3C: integration review, fixes and Phase 3 readiness
+
+Branch `feat/phase-3c-integration`, based on `e792e54` (the head of PR #1, Phase 3B, which already
+contains Phase 3A `7897fdd`). Date: 22 November 2026.
+
+This document covers:
+
+- the independent review of Phase 3A (analytics, Claude Code) and Phase 3B (automation, Codex) together;
+- the isolated fixes made on this branch;
+- the larger items handed to Codex;
+- the Phase 3 readiness report.
+
+## 1. Method
+
+The whole repository was reviewed along eight dimensions:
+
+- authorization and privileges (`db-authz`);
+- job reliability and the scheduler state machine (`jobs-reliability`);
+- trigger and regression interplay with Phases 1–2B (`triggers-regression`);
+- the Edge worker and digest builder (`worker-digest`);
+- the web UI (`web-ui`);
+- analytics integrity against the time records (`analytics-integrity`);
+- migrations and deployment (`migrations-deploy`);
+- privacy and reporting honesty (`privacy-reporting`).
+
+Each finding then went to two independent verifiers. One tried to refute it. The other reproduced it
+against the code, mostly with PGlite probes using the real migrations.
+
+**Result:** 33 findings, all 33 confirmed by reproduction, none rejected, plus one informational note:
+1 critical, 5 high, 7 medium and 20 low.
+
+## 2. Findings and status
+
+"Fixed" means fixed on this branch with a regression test, unless the row says otherwise. "Hn" is a
+Codex handoff item in §4.
+
+| ID | Severity | Finding | Status |
+|---|---|---|---|
+| db-authz#0 | critical | Any member could stop planning for every tenant by saving a preference that PostgreSQL stores as a non-integer number (`9.0`) | **Fixed** (migration 14: canonical storage, defensive read, per-membership planner isolation; worker still claims when planning fails) |
+| jobs-reliability#0 | high | Same root cause as db-authz#0, from the reliability side | **Fixed** |
+| worker-digest#0 | high | A planner exception made the worker skip claiming, so one bad row stopped all delivery | **Fixed** (worker claims anyway, returns 503 `planning_failed` with counts) |
+| web-ui#0 | high | Workspace rules could be saved only once; later saves failed with 42501 | **Fixed** (only the four switches are sent) |
+| migrations-deploy#0 | high | Same defect as web-ui#0, from the grants side | **Fixed** |
+| jobs-reliability#1 | medium | A reminder hour inside overnight quiet hours silently dropped that day's due-soon, due-today and overdue reminders | **Fixed** (planned for the end of quiet hours) |
+| jobs-reliability#2 | medium | The documented requeue of a failed job aborted later claim batches for every tenant | **Fixed** (claim tolerates an existing attempt row and skips exhausted jobs; docs give the exact requeue statement) |
+| web-ui#1 | medium | "Read summary" rendered the digest at the bottom of the page, with no focus or scroll | **Fixed** (modal `Dialog`) |
+| web-ui#2 | medium | Each Realtime row event refetched the whole feed, so "Mark all read" caused a burst of requests | **Fixed** (250 ms coalescing) |
+| analytics-integrity#0 | medium | Digest day boundaries come from the Edge runtime's ICU time zone data, Analytics from PostgreSQL's; they can differ | **Docs qualified**, real fix is **H1** |
+| analytics-integrity#1 | medium | "Completed in period" dropped tasks completed in the period and later archived or reassigned | **Relabelled** ("Your tasks completed in period (still done)"), real fix is **H2** |
+| privacy-reporting#0 | medium | Notices keep task titles and project names after rename or delete; nobody but an operator can remove them; jobs, attempts and cron history grow without limit | **Documented** (privacy.md, automation.md), real fix is **H3** |
+| jobs-reliability#3 | low | A time-zone change skipped the pending occurrence and could re-plan it at the wrong local time | **Fixed** (pending calendar jobs from the old zone are retired) |
+| jobs-reliability#4 | low | Lock-order deadlock between membership RPCs and delivery/planning | **H5** |
+| jobs-reliability#5 | low | Worker reported a delivery that committed under a serialization retry as failed | **Fixed** (40001 is re-settled and counted correctly; one counts-only log line per run) |
+| triggers-regression#0 | low | Worker RPCs lock member and schedule rows before the workspace row, the reverse of the membership RPCs | **H5** |
+| triggers-regression#1 | low | 3B removed the live workspace suite's cleanup | **Fixed** (checked owner delete, sign-out in `finally`) |
+| worker-digest#1 | low | Digest size was unbounded, so valid content could exceed the 100,000-byte delivery limit | **Fixed** (top 20 applications plus "Other applications (N)" rollup, 80-code-point text clipping, size safety net) |
+| web-ui#3 | low | The keyset cursor truncated `created_at` to milliseconds and could skip notices | **Fixed** (cursor sent verbatim, format-checked) |
+| web-ui#4 | low | After "Load older", each new notice hid one notice at the page boundary | **Fixed** |
+| web-ui#5 | low | A shared action silently dropped the automatic mark-read | **Fixed** (per-row saving state, errors surfaced) |
+| web-ui#6 | low | The client accepted a lower-case time zone that the server rejected | **Fixed** (both canonicalise case) |
+| web-ui#7 | low | No unread indicator at phone widths | **Fixed** (bell with unread badge in the top bar) |
+| web-ui#8 | low | The outcomes table skipped Phase 3A's accessible `DataTable` | **Fixed** (plus field-level validation errors in the settings form) |
+| web-ui#9 | low | docs/workspace.md page list omitted Notifications and Automation | **Fixed** |
+| analytics-integrity#2 | low | The worker's offset-paged time-entry read could skip an entry when rows were deleted mid-read | **Fixed** (keyset paging by id) |
+| migrations-deploy#1 | low | handoff-phase-3a.md still said migration 10 was not applied | **Fixed** (dated status note) |
+| migrations-deploy#2 | low | Shared docs described the pre-3B repository | **Fixed** (README, architecture, supabase docs) |
+| migrations-deploy#3 | low | handoff-phase-3b.md recorded a Rust count (355/11) that did not match the unchanged tree | **Fixed** (rerun: 365 passed, 12 ignored; row corrected) |
+| migrations-deploy#4 | low | `build:automation` relied on an undeclared `rolldown` | **Fixed** (declared `~1.2.13`; see §5.4 about the lock file) |
+| privacy-reporting#1 | low | The administrator outcome report revealed members' opt-outs, quiet hours and summary hours | **Fixed** in migration 14; residual is **H4** |
+| privacy-reporting#2 | low | Digest figures were labelled misleadingly | **Fixed** (labels say what is measured) |
+| db-authz#1 | low | The private-table privilege test only checked SELECT | **Fixed** (every table and column privilege for anon, authenticated and PUBLIC, and no policies in `private`) |
+| worker-digest (info) | info | Up to ten weekly digests share one invocation's CPU budget | **H6** |
+
+## 3. Changes on this branch
+
+### Database: migration 14, `20261119090000_automation_hardening.sql`
+
+The migration only uses `create or replace function` plus two data-repair updates. There are no table,
+policy or grant changes, and revokes are re-issued.
+
+- **Canonical preferences.**
+  - `private.validate_automation_preferences` stores integer settings as JSON integers.
+  - It resolves time zones case-insensitively to their tz-database spelling.
+  - `private.automation_config` reads defensively, truncating any stored number to an integer.
+  - A one-off repair rewrites existing non-canonical rows.
+- **Planner isolation.** `private.plan_automation` plans each membership in its own exception block. A
+  failure logs a warning with the SQLSTATE only, pushes that schedule back one hour and continues.
+- **Reminder hour inside quiet hours.** The effective reminder hour becomes the end of quiet hours.
+- **Time-zone change.** Pending or retrying calendar jobs from the old zone are marked skipped, with a
+  `:superseded:<id>` occurrence key, so the new zone's occurrence can be planned.
+- **Requeue-safe claiming.** `public.claim_automation_jobs` ignores jobs with 5 attempts and upserts the
+  attempt row.
+- **Private outcomes.** `public.automation_outcomes`:
+  - shows preference skips as `completed`;
+  - shows quiet-hours deferrals (`retry` with no error) as `pending`;
+  - returns no `run_after` or `completed_at`;
+  - truncates `created_at` to the day.
+
+### Worker and digest (`server/automation`)
+
+- Planning failures no longer prevent claiming. The run returns 503 `planning_failed` with counts.
+- A 40001 conflict on `fail_automation_job` re-settles through `finish_automation_job`.
+- One counts-only JSON log line per run: no ids, titles or user data.
+- Keyset paging (`id > last`, 1,000 rows) replaces offset paging.
+- Digests are bounded under the delivery limit, and the application rollup keeps the totals consistent.
+
+### Web (`apps/web`)
+
+- Workspace rule saves send only the four switches.
+- Exact notification cursor.
+- Time-zone canonicalisation.
+- Coalesced Realtime refresh.
+- Notifications page:
+  - per-row mark-read with surfaced errors;
+  - correct "Load older" merging;
+  - the digest opens in a dialog with honest labels.
+- Top-bar bell with an unread badge.
+- Automation page:
+  - outcomes use the shared `DataTable`, with readable state and kind labels;
+  - creation shows as a date only;
+  - "Scheduled" is shown in place of private times;
+  - field-level validation errors.
+
+### Build, tests and docs
+
+- `rolldown` is declared.
+- The worker bundle banner no longer depends on rolldown's `banner` option.
+- `check:secrets` has a narrow, tested allowlist entry for the worker bundle. Its two hits are
+  supabase-js's key-format check and the runtime *name* `SUPABASE_SERVICE_ROLE_KEY`; no values.
+- New tests:
+  - `tests/integration/supabase/automation-hardening.test.ts`: 11 tests, all of which fail without
+    migration 14 (checked by moving the migration out).
+  - `tests/unit/web/automation-fixes.test.ts`: 9 tests.
+  - additions to `automation-views.test.ts` and `secret-scan.test.ts`;
+  - the widened `privileges.test.ts`, which was checked to fail on a stray column grant.
+- Docs updated:
+  - README.md and docs/architecture.md;
+  - docs/supabase.md, docs/automation.md, docs/privacy.md and docs/workspace.md;
+  - supabase/README.md;
+  - tests/live/README.md;
+  - handoff-phase-3a.md (status note) and handoff-phase-3b.md (Rust count).
+
+## 4. Codex handoff
+
+Each item needs a **new forward migration**. Applied migrations must not be edited. Keep the existing
+rules:
+
+- RLS is never weakened;
+- no privileged key in a client;
+- `search_path = ''` on every function;
+- `tests/integration/supabase/privileges.test.ts` stays exhaustive. Update its expectation lists for any
+  new function, grant or policy.
+
+### H1: digest day boundaries from PostgreSQL (analytics-integrity#0, medium)
+
+- **Problem.** `buildDigest` and the worker compute local-day starts with the time-engine's ICU-based
+  `startOfLocalDay` inside the Edge runtime. `analytics_time_summary` uses PostgreSQL's tz database. Where
+  the two disagree, a digest's totals differ from Analytics for the same days. Known examples are
+  America/Edmonton from 2026-11-02 and Africa/Casablanca from 2026-09-21; see docs/analytics.md.
+- **Affected files.**
+  - New migration:
+    - factor the DST-gap-safe day-start expression of `analytics_time_summary`
+      (`20261112090000_analytics.sql`, around lines 188–194 and 223–229) into
+      `private.local_day_start(d date, tz text) returns timestamptz`, and use it in the RPC too;
+    - add a service-role-only `public.automation_day_starts(p_time_zone text, p_from date, p_to date)
+      returns jsonb`.
+  - `server/automation/worker.ts`: use those instants for the `time_entries` window.
+  - `server/automation/digest.ts`: use the same instants for `completedInPeriod` and pass them in.
+  - `packages/time-engine/src/reconcile.ts` (`summarizeReport`) and `intervals.ts`: accept optional
+    precomputed `dayStarts` in place of `startOfLocalDay`.
+- **Expected behaviour.** A digest's period, per-day and total figures equal `analytics_time_summary`
+  for the same user, zone and days, whatever the Edge ICU version.
+- **Verification.**
+  - A PGlite equality test in a diverging zone, for example Edmonton with an entry on 2026-11-10 between
+    06:00 and 07:00Z.
+  - Time-engine unit tests with and without `dayStarts`.
+  - The full suite under `TZ=America/Los_Angeles`.
+  - The hosted live automation test, repeated in a non-UTC zone.
+  - Then restore the unqualified "matches Analytics" claim in docs/automation.md.
+
+### H2: durable completion record (analytics-integrity#1, medium)
+
+- **Problem.** `tasks_track_completion` clears `completed_at` when a task leaves `done`, archiving
+  included. The worker also reads only tasks currently assigned to the recipient. So "completed in
+  period" can only mean "still done and still yours". It is relabelled now.
+- **Affected files.**
+  - New migration with an append-only `private.task_completions(task_id, workspace_id, completed_by,
+    completed_at)`, written by the tasks completion trigger. It must cascade on task delete. The
+    alternative is a `completed_by` column preserved through archive.
+  - `server/automation/worker.ts` and `digest.ts`: count completions by the recipient in `[from, to)`.
+    Either bump `formatVersion` to 2 or add a new field.
+  - `apps/web/src/views/NotificationsView.tsx`: label.
+  - docs/automation.md and docs/privacy.md.
+- **Decisions needed.**
+  - Who gets the credit: the completer or the assignee at completion.
+  - How reopen-then-redo counts. Recommendation: distinct tasks.
+- **Verification.**
+  - PGlite tests: complete then archive is counted; complete then reassign follows the chosen rule;
+    deleting the task removes the record.
+  - Digest unit test.
+  - Privileges test: the table is in `private` with no client privileges.
+
+### H3: notice retention, rename/delete propagation and pruning (privacy-reporting#0, medium)
+
+- **Problem.**
+  - Delivered notices keep task titles, project names and digest content after the underlying work is
+    renamed or deleted.
+  - Recipients cannot delete notices.
+  - `private.automation_jobs`, `automation_attempts` and `cron.job_run_details` grow without limit.
+    Hosted had 6,710 cron rows on 20 November, growing about 1,440 a day.
+- **Affected files and changes** (new migration plus UI):
+  - `notifications_task_id_fkey` becomes `on delete cascade`, matching `private.automation_jobs.task_id`.
+  - Recipient delete:
+    `create policy notifications_delete on public.notifications for delete to authenticated using
+    (recipient_id = (select auth.uid()))` and `grant delete on public.notifications to authenticated`.
+    Deleting the notice leaves the job `completed` with its occurrence key, so nothing is redelivered.
+  - A `BEFORE DELETE` trigger on `public.projects` removes `payload->'projectName'` from non-digest
+    notices. It must run before the FK set-null clears `project_id`.
+  - A daily pg_cron prune:
+    - read notices older than an agreed window;
+    - attempt rows for finished jobs;
+    - job payloads, while **keeping** the job rows (or a tombstone of `occurrence_key`) so occurrences
+      are never redelivered;
+    - `cron.job_run_details` older than about 14 days.
+  - Optionally, show the live task title when the task is still readable.
+  - `NotificationsView.tsx`: a per-notice "Delete" action that updates the list locally. Realtime is
+    INSERT/UPDATE only.
+- **Expected behaviour.**
+  - Deleting a task removes its notices.
+  - A recipient can delete only their own notices.
+  - Old operational rows are pruned on a schedule, and occurrence de-duplication still holds.
+- **Verification.**
+  - PGlite tests: cascade; owner-only delete (another member gets 0 rows); no redelivery after delete;
+    project-delete strips the name; the prune keeps tombstones.
+  - Privileges test: the notifications DELETE grant and policy.
+  - Docs: privacy.md, automation.md and supabase.md.
+
+### H4: aggregate outcome report (privacy-reporting#1 residual, low)
+
+- **Problem.** After migration 14, outcome rows no longer expose times or skips, but some inference is
+  still possible:
+  - an administrator can still match rows to events they caused;
+  - the existence of daily, weekly, inactive and reminder rows shows that someone opted in.
+- **Change.** Redefine `public.automation_outcomes` to return counts per kind and state over a window,
+  plus failure entries limited to kind, failure day and error code. Update
+  `apps/web/src/lib/automation.ts` (`AutomationOutcome`), `AutomationView.tsx`, the outcome tests in
+  `automation-hardening.test.ts` and `automation-views.test.ts`, and the docs.
+- **Decision needed.** Whether administrators need per-job rows for operations. Operators can always use
+  SQL.
+
+### H5: lock-order deadlock between membership RPCs and the worker (jobs-reliability#4, triggers-regression#0, low)
+
+- **Problem.**
+  - `remove_member` and `set_member_role` lock the workspace `FOR UPDATE`, then the member row.
+  - `finish_automation_job` locks the member row `FOR SHARE`, then its notification insert needs
+    `FOR KEY SHARE` on the workspace.
+  - The planner holds schedule rows `FOR UPDATE` while its job inserts need `FOR KEY SHARE` on the
+    workspace, and `remove_member`'s trigger deletes that schedule row.
+  - PostgreSQL resolves the cycle by aborting one side with 40P01, usually the membership change.
+- **Affected files.** A new migration with `create or replace` of:
+  - `public.set_member_role` (`20261017090400_advisor_hardening.sql`, lock around line 147) and
+    `public.remove_member` (around line 186): workspace lock `for update` becomes `for no key update`.
+    This still serialises membership changes but no longer conflicts with FK `KEY SHARE`.
+  - `public.promote_successor_owner` (`20261017090500_owner_succession.sql`, around line 36): the same
+    change.
+  - `public.finish_automation_job` (latest definition in `20261112120000_automation_foundation.sql`):
+    after the claim checks and before the member `FOR SHARE`, add
+    `perform 1 from public.workspaces where id = j.workspace_id for key share;`. Treat "not found" as
+    skipped.
+  - `private.automation_membership_schedule`: stop deleting the schedule row when a member leaves.
+    `plan_automation` already filters `status = 'active'`, and the FK cascade removes it on a hard
+    delete. The alternative is a `for update skip locked` delete.
+  - Review `accept_invitation` against `remove_member` once the lock modes change. The verifier flagged
+    a possible separate cycle through the invitation row, which was not verified.
+- **Expected behaviour.** Concurrent `remove_member` or `set_member_role` and worker finish or planning
+  never produce 40P01.
+- **Verification.** PGlite has one connection and cannot run this. Use a real PostgreSQL with two
+  connections, for example the Supabase CLI local stack or a disposable branch:
+  1. Session A: `begin`, then lock the member row `FOR SHARE` the way finish does.
+  2. Session B: `remove_member`.
+  3. Session A: insert a notification.
+  4. Expect no deadlock, and the finish to skip after B commits.
+  5. Repeat for the planner path.
+  6. The existing member and owner-succession suites must stay green.
+
+### H6: Edge CPU budget for weekly digests (info)
+
+- **Problem.** One invocation claims up to 10 jobs and builds every digest in sequence. Weekly digests
+  for a team in one zone land in the same minute. Measured locally at about 20 µs per entry (14,000
+  entries ≈ 281 ms); the hosted Edge CPU limit was not measured.
+- **Change.** Measure first. Add `durationMs` to the existing counts-only `automation_run` log line. If
+  needed, claim digest kinds in smaller batches, for example 2 per call.
+- **Verification.** A disposable hosted workspace with synthetic heavy entries, timed at the weekly
+  hour, then deleted.
+
+## 5. Phase 3 readiness report
+
+### 5.1 Completed features
+
+- **Phase 3A, analytics:**
+  - server-side `analytics_time_summary` with reconciliation matching the desktop time engine;
+  - reports by day, week and month, project, task, application and member, with visibility rules;
+  - unattributed-time reporting;
+  - CSV exports;
+  - project insights and task progress.
+- **Phase 3B, automation:**
+  - per-member notification preferences and workspace rules;
+  - event notices: assignment, review, completion;
+  - reminders: due soon, due today, overdue, inactive;
+  - daily and weekly personal digests built with the Phase 3A reporting definitions;
+  - an in-app notification feed with Realtime;
+  - an administrator outcome report;
+  - a pg_cron → pg_net → Edge worker pipeline that runs without the desktop app or a browser, with
+    leased claims, de-duplication by occurrence key, exponential retry capped at 5 attempts, and
+    quiet hours.
+- **Phase 3C, integration:** the 28 fixes in §2, migration 14, the regression tests, and
+  documentation brought in line with the code.
+
+### 5.2 Tests and results
+
+**Executed on this branch, 22 November 2026, Windows 11, Node via `node node_modules/...`. Global `npm`
+is broken on this machine; see §5.4.**
+
+| Check | Command | Result |
+|---|---|---|
+| TypeScript, 7 workspaces plus root | `tsc -p <project> --noEmit` for each | Passed, 0 errors |
+| Full TypeScript/PGlite suite | `vitest run` | **64 files, 1,547 tests passed**, 0 skipped (before the follow-up below) |
+| Same suite in a non-UTC zone | `TZ=America/Los_Angeles vitest run` | **64 files, 1,547 passed** |
+| Final rerun after the outcome-masking follow-up | `tsc` (web and root), then `vitest run` | Passed; **64 files, 1,548 tests passed** (one new test); `automation-views` also passed under Los Angeles |
+| Migration 14 regression tests, without the migration | same file, with the migration moved out | **11 of 11 failed**, as expected. The same-zone guard fails only in the whole-file run: the earlier isolation test leaves an unusable row that stops the unfixed planner for everyone, which is db-authz#0 itself |
+| Widened privilege test against a stray grant | temporary migration granting `update(state)` on `private.automation_jobs` | Failed, as expected; the probe was removed |
+| Web production build | `vite build` (apps/web) | Passed; the existing >500 kB chunk warning remains |
+| Web bundle secret scan | `check-bundle-secrets.mjs apps/web/dist` | Passed: 7 files, only the allowlisted key-rejection rule |
+| Worker bundle | `build-automation-worker.mjs` | Passed, 331 KB, gitignored |
+| Worker bundle secret scan | `check-bundle-secrets.mjs supabase/functions/automation-worker` | Passed: only the two allowlisted references, no values |
+| Desktop UI build | `vite build` (apps/desktop) | Passed |
+| Rust tests | `cargo test` | **365 passed, 0 failed, 12 ignored by design** (9 interactive desktop, 1 Credential Manager, 2 live Supabase) |
+| Rust lint and format | `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` | Passed |
+| Hosted scheduler health (read-only SQL, 20 November) | `cron.job_run_details`, `net._http_response` | 1,440 runs in 24 h, 0 failed; 360 worker responses in 6 h, all HTTP 200; 13 migrations applied; 0 users, workspaces, jobs or notifications |
+
+**Not executed here (manual or environment-bound):**
+
+- Signed-in browser checks of the changed web UI at 1280 px and 390 px: bell and badge, digest dialog,
+  outcomes table, field errors, "Load older". They need a real sign-in, and the hosted database does
+  not have migration 14 yet.
+- Hosted live suites (`tests/live/*.live.test.ts`), including the corrected workspace-suite cleanup.
+  They need the hosted project's service credentials in a local env file.
+- Hosted verification after migration 14: `supabase/automation/verify-scheduler.sql`, HTTP 200 with
+  `"failed":0`, and the live automation test.
+- Tauri release and NSIS installer build. The Rust tree and desktop code are unchanged since 3B, which
+  recorded it.
+- The 9 interactive-desktop Rust tests and the Windows manual checklist (docs/windows.md); the desktop
+  is unchanged.
+- `npm ci` against the edited `package-lock.json`, which is blocked by the broken global npm. The
+  `rolldown` entry was added by hand and the installed version matches (1.2.13).
+- Concurrency (H5), which needs real PostgreSQL with two connections.
+
+### 5.3 Unresolved issues
+
+- H1–H6 in §4. None blocks a controlled pilot. H3 should land before real users accumulate history.
+- The web bundle is a single chunk of about 781 kB (224 kB gzipped). This was there before and is
+  only a performance concern.
+- No CI: there is no `.github/workflows`, so every check above is run by hand.
+- Digest payload field `unassigned` is shown as "Unattributed active time". The field name is kept to
+  avoid a `formatVersion` bump; handoff-phase-3b.md line 78 still says "unassigned".
+
+### 5.4 Deployment requirements
+
+In order:
+
+1. **Merge.** Merge PR #1 (Phase 3B, which contains 3A) into `main`, then this branch. It is based on
+   PR #1's head, so it merges cleanly on top.
+2. **Database.** Apply `20261119090000_automation_hardening.sql` to the hosted project (`supabase db push`
+   or the dashboard). It only replaces functions and repairs data, so it is safe on the current empty
+   data set. Then run `supabase/automation/verify-scheduler.sql` and check advisors.
+3. **Worker.**
+   1. Run `npm run build:automation`.
+   2. Run `npm run check:secrets -- supabase/functions/automation-worker`.
+   3. Run `supabase functions deploy automation-worker --project-ref <ref> --no-verify-jwt`
+      (docs/automation.md).
+   4. Confirm the next cron responses are HTTP 200 with `"failed":0`.
+4. **Web.** Build with the production public configuration, then run `npm run check:secrets:web` and
+   deploy `apps/web/dist`.
+5. **Desktop.** No new release is required by Phase 3.
+6. **Operations.**
+   - Schedule the `cron.job_run_details` prune (docs/automation.md, "Retention and growth") until H3
+     automates it.
+   - Watch the counts-only `automation_run` log line and 503 `planning_failed` responses.
+7. **This machine.** Global npm is missing `make-fetch-happen/lib/cache`, probably deleted by a cleanup
+   tool. Reinstall Node/npm, then run `npm ci` to confirm the lock file.
+
+### 5.5 Production readiness
+
+- **Today, hosted:** the critical cross-tenant halt (db-authz#0) and the rule-save failure (web-ui#0)
+  are live on hosted until steps 2–4 are deployed. There are no users or data yet, so nothing has been
+  exposed.
+- **After steps 1–4 and the manual signed-in checks:** ready for a **controlled pilot** with known
+  users. All high and critical findings are fixed and tested, the scheduler has run cleanly, and the
+  automated suites pass.
+- **General production:** wait for:
+  - H3 (retention and deletion: a privacy obligation once real data accumulates);
+  - H5 (rare, but it fails membership administration);
+  - a CI pipeline running the checks above;
+  - H1 if users are in zones where ICU and PostgreSQL disagree.
+
+### 5.6 Recommended Phase 4 scope
+
+1. Land H1–H5 with their tests, and H6 measurement, as one hardening slice.
+2. Add CI that runs typecheck, Vitest (UTC and one non-UTC zone), the web and worker builds with
+   secret scans, and the Rust test and lint.
+3. Add a real-PostgreSQL concurrency harness, for example the Supabase CLI local stack, for H5-type
+   tests.
+4. Operational alerting on worker failures and `planning_failed`, built on data already recorded.
+5. Code-split the web bundle.
+
+No new product features are recommended until 1–3 are done.
