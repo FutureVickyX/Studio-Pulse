@@ -109,7 +109,9 @@ link to a workspace. Debug builds also read the variable at runtime.
   RLS-check DELETE events, so every signed-in subscriber to these tables receives the id (only
   the id: no title, text or workspace) of every deleted row in the project, with its timing. The
   page refetches only for deleted rows it holds. Events only trigger a refetch, which is again
-  subject to RLS.
+  subject to RLS. Known gap: a teammate's change made while the page is opening may not appear until
+  the next refresh trigger (§6). The window is longer, a few seconds, when Realtime has been idle
+  for about 10 minutes (docs/handoff-phase-3c.md, H7).
 
 Who may do what, enforced in the database (`supabase/migrations`, tests in
 `tests/integration/supabase`):
@@ -321,7 +323,8 @@ Use two accounts in two browsers, or one normal and one private window:
 1. **A** signs in, creates a workspace and invites **B** from the desktop app (Settings ›
    Workspace). **B** signs in on the web and joins with the code.
 2. **A** creates a project with **B** as lead, and a task assigned to **B** with a due date in
-   three days. **B** sees it under *My tasks* and on the Overview, without reloading.
+   three days. **B** sees it under *My tasks* and on the Overview, without reloading. (If **B** has
+   only just opened the page after Realtime was idle, wait a few seconds before **A** acts; see §4.)
 3. **B** adds checklist items and a comment. **A** sees them appear in the open task panel.
 4. Both open the same task and change its title. The second save says someone else saved first and
    shows their version.

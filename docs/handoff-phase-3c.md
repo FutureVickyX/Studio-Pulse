@@ -135,6 +135,12 @@ policy or grant changes, and revokes are re-issued.
 - Live automation test: the burst polls for up to 150 s (was 110 s), with a 170 s test timeout. Setup
   re-saves the workspace settings after creating the first task, so a planning pass that ran in between
   can't delay `due_today` by 15 minutes (§5.2).
+- Live workspace test: the Realtime test subscribes with `postgres_changes_options: { wait: true }`
+  (supabase-js 2.118), so `SUBSCRIBED` means the postgres_changes subscription exists. The 1.5 s
+  pause before the writes is gone; the 1.5 s wait afterwards, for a stray private event, stays. The
+  test fails at once on `CHANNEL_ERROR`, `TIMED_OUT` or `CLOSED` (transport errors count as
+  `CHANNEL_ERROR` too), removes its channel even on failure, and has a 90 s timeout (§5.2, Realtime
+  note).
 - New tests:
   - `tests/integration/supabase/automation-hardening.test.ts`: 11 tests, all of which fail without
     migration 14 (checked by moving the migration out).
@@ -150,8 +156,8 @@ policy or grant changes, and revokes are re-issued.
 
 ## 4. Codex handoff
 
-Each item needs a **new forward migration**. Applied migrations must not be edited. Keep the existing
-rules:
+Each database change needs a **new forward migration** (H7 is client-only). Applied migrations must
+not be edited. Keep the existing rules:
 
 - RLS is never weakened;
 - no privileged key in a client;
@@ -301,6 +307,45 @@ rules:
 - **Verification.** A disposable hosted workspace with synthetic heavy entries, timed at the weekly
   hour, then deleted.
 
+### H7: web Realtime channels report `SUBSCRIBED` before they are live (hosted workspace suite, low)
+
+No migration; this is a web-client change.
+
+- **Problem.** Two web channels use Realtime, and they share one socket:
+  - `watchWorkspace` in `apps/web/src/lib/realtime.ts`;
+  - `useAutomationRefresh` in `apps/web/src/app/automation.ts`.
+
+  `SUBSCRIBED` only means the channel joined. The server registers the postgres_changes subscription
+  afterwards: on a cold Realtime tenant, 1.96 s later in one probe and over 2.1 s in the failed run,
+  with random retries 1–3 s apart (§5.2, Realtime note). A teammate's change in that window is not
+  delivered. Independently of the tenant, a page's first queries run before the channel exists:
+  child effects run before `Shell`'s. So a change made between the first read and a live subscription
+  is missed on a warm tenant too. That gap is short when warm.
+  - `watchWorkspace` refreshes only on a later `SUBSCRIBED` (a reconnect), never the first. The page
+    stays stale until the tab is hidden and shown again, the browser comes back online, the channel
+    reconnects, or a later change to the same table arrives.
+  - The notification feed refreshes 250 ms after `SUBSCRIBED`, which can be too early, and on its 60 s
+    visible-tab timer.
+- **Change (preferred).** Refresh when the subscription is confirmed, without holding the join:
+  - On both channels, add `.on('system', {}, p => …)` and refresh when
+    `p.extension === 'postgres_changes' && p.status === 'ok'`. The server sends "Subscribed to
+    PostgreSQL" with or without `wait`; channel A in the §5.2 probe received it without.
+  - Keep a refresh on the first `SUBSCRIBED` in `watchWorkspace` as well, for the warm-tenant gap.
+- **Why not `wait`.** `postgres_changes_options.wait` holds each join inside the websocket's
+  transport process for up to the wait timeout: 15 s by default, 20 s at most, plus about 5 s of
+  back-off when it fails. Joins on one socket queue behind it. With two waiting channels on one
+  socket, a failing tenant can hold the socket longer than realtime-js 2.118's 25 s join timeout and
+  25 s heartbeat. Phoenix then rejoins errored channels on its own, and each rejoin waits again. If
+  `wait` is used anyway:
+  - put all bindings on one channel, so there is one wait per socket;
+  - pass a short `postgres_changes_options.timeout`, for example 5 000 ms;
+  - log `CHANNEL_ERROR` and `TIMED_OUT` but keep the channel, since Phoenix rejoins it, and refresh on
+    the next `SUBSCRIBED`.
+- **Verification.**
+  - Unit tests for the confirmed-subscription refresh and the first-`SUBSCRIBED` refresh.
+  - On hosted, a cold-tenant check with the web's real setup (both channels on one socket),
+    recording both channels' confirmation times and that heartbeats keep getting replies.
+
 ## 5. Phase 3 readiness report
 
 ### 5.1 Completed features
@@ -360,6 +405,12 @@ is broken on this machine; see §5.4.**
 | Delivery records, all three runs | SQL over jobs and notices before each cleanup | Each run: 16 jobs, all completed on the first attempt with no error; 16 notices (13 assigned, 1 due today, 1 daily, 1 weekly), one recipient, no duplicates |
 | Security advisor after the runs | `get_advisors` | Unchanged: lint 0029 for the nine intended RPCs, and lint 0008 (INFO) for the five policy-free `private` tables |
 | Cleanup | SQL, after runs 2 and 3 | All three workspaces and all six throwaway users deleted. Every `public` and `private` table, plus `auth.users`, `identities`, `sessions`, `refresh_tokens` and `one_time_tokens`, is back to 0 rows; only the scheduler's key hash remains. The local credential files were deleted after each cleanup |
+| Signed-in web build (23 November) | Production build of `b6311f7` (`vite build` with the hosted URL and publishable key; `check-bundle-secrets` passed, 7 files, only the allowlisted key-rejection rule), served by `vite preview` on 127.0.0.1. The user signed in as a throwaway owner of a fresh workspace that had no rules row and 55 seeded notices (all "assigned"; no digest notices and no automation jobs). The viewport width was not recorded | **Workspace rules saved twice; the user confirmed both changes persisted.** The first save found no row and inserted it (PATCH 200 matching nothing, then POST 201, 11:22:46). The second updated it (PATCH 200, 11:23:11). The stored row ended with automations and task events on and reminders and summaries off, matching the page after reloads. The session also loaded the notice list, fetched the older page once ("Load older") and marked notices read (all 55 read at the end). All 131 requests from the browser succeeded (125 × 200, 1 × 201, 1 × 204, 4 websocket upgrades) |
+| Hosted workspace suite, run 1 (23 November) | `tests/live/workspace.live.test.ts` as committed in `b6311f7` (1.5 s pause after `SUBSCRIBED`, no `wait`), three new throwaway users | **6 of 7 passed.** The Realtime test received no events at all (`expected [] to include 'task:RT task'`). The run had just cold-started Realtime; see the Realtime note below. Its workspace was gone afterwards |
+| Realtime diagnosis | Read-only SQL (`pg_replication_slots`, `pg_stat_activity`), Realtime and Postgres logs, the Realtime server source, and two probes with the same users and writes as the test (one warm, one on a tenant confirmed cold) | Cause found: on a cold tenant, `SUBSCRIBED` arrives before the server registers the postgres_changes subscription (Realtime note below). Test changed to use `wait` (§3) |
+| Hosted workspace suite, run 2 (23 November) | The changed test, on a tenant confirmed cold first (Realtime shutdown logged, no replication slots, no Realtime connections at 11:52:45). The run's websocket started Realtime at 11:53:17 | **7 of 7 passed** (27 s; the Realtime test took 4.5 s, cold start included). Shared note and task delivered, private note not. `afterAll`'s checked owner delete (count 1) and sign-out passed, which verifies the corrected cleanup (triggers-regression#1) on hosted |
+| Scheduler health after the checks | `cron.job_run_details`, `net._http_response` | 11:54: job active; the last 60 minutes had 60 runs, all succeeded, 60 responses, all HTTP 200 with `"failed":0` |
+| Cleanup (23 November) | SQL | Every workspace from the checks was deleted (the browser check's by SQL, the suites' and probes' by their own owner deletes), then the three throwaway users. Across all `public` and `private` tables, `auth.users`, `identities`, `sessions`, `refresh_tokens`, `one_time_tokens`, `mfa_factors`, `flow_state` and `realtime.subscription` (26 tables), only `private.automation_worker_keys` has a row (the scheduler's key hash). The local credential files were deleted and the preview server stopped |
 
 - **Line endings on hosted.** Ten functions applied in Phase 3B differ from the repository by raw
   `md5(prosrc)` only because they were applied with CRLF line endings and PostgreSQL keeps the CRs in
@@ -386,13 +437,43 @@ is broken on this machine; see §5.4.**
   the next scan 15 minutes ahead, and `due_today` would miss the 110 s bound. The window is one
   request in each minute. Setup now saves the workspace settings again after creating the task, which
   resets the scan.
+- **Realtime on a cold tenant (workspace suite run 1).** The Realtime test failed because `SUBSCRIBED`
+  came before the server's postgres_changes subscription existed.
+  - Without `wait`, the Realtime server replies to the join first and registers the subscription
+    afterwards. If its change-capture process is not ready yet, it tries again after a random 1–3 s,
+    and can repeat (`realtime_channel.ex` on the supabase/realtime main branch; the hosted version was
+    not checked). The poller drains the replication slot continuously and matches each change against
+    the subscriptions that exist when it reads it. A change read before the subscription exists is
+    dropped for that subscriber.
+  - Realtime stops after about 10 minutes without clients ("Tenant has no connected users" in the
+    Realtime log) and starts again on the next join. Run 1 started it at 11:14:32. The test writes at
+    least 1.5 s after `SUBSCRIBED` (its pause), and the inserts were logged at 11:14:34.33–34.90. None
+    arrived, so that run's gap was longer than about 2.1 s. The same steps on the warm tenant two
+    minutes later delivered every shared write.
+  - Cold-tenant probe, 11:40, after the logged shutdown at 11:35: two channels on one socket with the
+    test's writes. Channel A (no `wait`) joined first, channel B (`postgres_changes_options.wait`)
+    second. A's "Subscribed to PostgreSQL" message came **1.96 s** after its `SUBSCRIBED`, longer than
+    the test's 1.5 s pause; B's came 1 ms after its own. Both channels received every shared note and
+    task, and neither received a private note. This time A's retry came sooner than in run 1, so
+    probably only the first write (the private note) fell in A's gap.
+  - The change-capture slot was not the missing piece. In the probe Postgres logged its consistent
+    point at 11:40:04.670, more than a second before either channel's `SUBSCRIBED`. In run 1 it was at
+    11:14:32.503, well before the writes. With `wait`, `SUBSCRIBED` also means the subscription row
+    exists, so later writes are captured and matched. Run 2 confirmed this on a cold tenant, writing
+    straight after `SUBSCRIBED`.
+  - The test now uses `wait` (§3). The same gap in the web client is H7.
 
 **Not executed here (manual or environment-bound):**
 
-- Signed-in browser checks of the changed web UI at 1280 px and 390 px: bell and badge, digest dialog,
-  outcomes table, field errors, "Load older". They need a real sign-in and the new web build.
-- The hosted workspace live suite (`tests/live/workspace.live.test.ts`), including the corrected
-  workspace-suite cleanup. Only the automation suite was run against hosted.
+- The rest of the signed-in browser checks. The 23 November session covered the web-ui#0 rule saves
+  (insert, then update), the notice list, "Load older" and marking notices read, at an unrecorded
+  width. Not covered:
+  - the bell and unread badge at 390 px (web-ui#7), and any check at a known 1280 px width;
+  - the digest dialog (web-ui#1): no digest notice existed;
+  - the outcomes table with rows (web-ui#8): no jobs existed;
+  - the field-level validation errors;
+  - a new notice arriving after "Load older" (web-ui#4): none arrived.
+- A cold-tenant check of the web client's Realtime channels (H7).
 - Tauri release and NSIS installer build. The Rust tree and desktop code are unchanged since 3B, which
   recorded it.
 - The 9 interactive-desktop Rust tests and the Windows manual checklist (docs/windows.md); the desktop
@@ -403,7 +484,7 @@ is broken on this machine; see §5.4.**
 
 ### 5.3 Unresolved issues
 
-- H1–H6 in §4. None blocks a controlled pilot. H3 should land before real users accumulate history.
+- H1–H7 in §4. None blocks a controlled pilot. H3 should land before real users accumulate history.
 - The web bundle is a single chunk of about 781 kB (224 kB gzipped). This was there before and is
   only a performance concern.
 - No CI: there is no `.github/workflows`, so every check above is run by hand.
@@ -442,12 +523,14 @@ In order:
 ### 5.5 Production readiness
 
 - **Today, hosted:** migration 14 and worker v2 are live on `studio-pulse-dev` (22 November). That fixes
-  the critical cross-tenant halt (db-authz#0) there, and the live automation suite passes against it.
-  The rule-save failure (web-ui#0) is a web-client fix, so it stays until the web app is deployed
-  (step 4, after merging). The project is back to no users or data, so nothing has been exposed.
-- **After steps 1–4 and the manual signed-in checks:** ready for a **controlled pilot** with known
-  users. All high and critical findings are fixed and tested, the scheduler has run cleanly, and the
-  automated suites pass.
+  the critical cross-tenant halt (db-authz#0) there. The live automation suite (22–23 November) and
+  the live workspace suite (run 2, 23 November) pass against it. The rule-save failure (web-ui#0) is a
+  web-client fix. A local production build of this branch saved rules correctly against hosted, but
+  the fix stays undeployed until the web app is deployed (step 4, after merging). After the
+  23 November cleanup the project again has no users or data, so nothing has been exposed.
+- **After steps 1–4 and the remaining signed-in checks (§5.2):** ready for a **controlled pilot**
+  with known users. All high and critical findings are fixed and tested, the scheduler has run
+  cleanly, and the automated suites pass.
 - **General production:** wait for:
   - H3 (retention and deletion: a privacy obligation once real data accumulates);
   - H5 (rare, but it fails membership administration);
@@ -456,7 +539,7 @@ In order:
 
 ### 5.6 Recommended Phase 4 scope
 
-1. Land H1–H5 with their tests, and H6 measurement, as one hardening slice.
+1. Land H1–H5 and H7 with their tests, and H6 measurement, as one hardening slice.
 2. Add CI that runs typecheck, Vitest (UTC and one non-UTC zone), the web and worker builds with
    secret scans, and the Rust test and lint.
 3. Add a real-PostgreSQL concurrency harness, for example the Supabase CLI local stack, for H5-type
