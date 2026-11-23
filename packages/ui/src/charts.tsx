@@ -1,6 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { cx } from './cx';
+import { durationTicks, formatAxisDuration } from './scales';
+import { TOTAL_COLOR } from './seriesColors';
 
 /*
  * Lightweight charts, hand-rolled (no chart library). Rules (dataviz skill):
@@ -657,5 +659,234 @@ export function ColumnChart({
       ) : null}
       <ChartTooltip content={activeDatum?.tooltip ?? null} anchor={anchor ?? null} />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Area chart: one series over ordered buckets, a 2 px line above a faint wash
+// ---------------------------------------------------------------------------------------------
+
+export interface AreaDatum {
+  key: string;
+  /** Short x-axis label; labels are thinned to fit the width. */
+  label: string;
+  /** The plotted value (a duration in ms with the default axis). Negative values are drawn as 0. */
+  value: number;
+  /** The readout at this x: every value at the point (e.g. Active, Idle, In foreground). */
+  tooltip: ChartTooltipContent;
+}
+
+export interface AreaChartProps {
+  /** One point per bucket, in x order. */
+  data: ReadonlyArray<AreaDatum>;
+  /** Y gridline values, ascending; the last one is the scale maximum. Default: `durationTicks` of the largest value. */
+  yTicks?: ReadonlyArray<number>;
+  /** Y-axis labels. Default: `formatAxisDuration`. */
+  formatTick?: (value: number) => string;
+  /** Plot height in px (the x-axis band is added below it). */
+  height?: number;
+  /** Line and wash colour: an application's series colour, or the neutral aggregate (default). */
+  color?: string;
+  /** A fixed width in px instead of filling the container (measured, like `ColumnChart`). */
+  width?: number;
+  'aria-label': string;
+  /** Data is being refreshed: keep the frame, dim the marks. */
+  stale?: boolean;
+}
+
+const DOT_RADIUS = 3.5;
+
+/** Two decimals are plenty for SVG coordinates and keep long series' paths short. */
+function coord(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * A single series as a line with a ~10% wash below it, for time over buckets. A crosshair snaps to
+ * the nearest bucket and the tooltip lists every value there; the arrow keys step through the
+ * points (Home, End, Escape as in `ColumnChart`), and the focused point's readout is also spoken.
+ * Without data it keeps the empty frame (axis and grid) and takes no focus.
+ */
+export function AreaChart({
+  data,
+  yTicks,
+  formatTick = formatAxisDuration,
+  height = 168,
+  color = TOTAL_COLOR,
+  width: fixedWidth,
+  stale = false,
+  'aria-label': ariaLabel,
+}: AreaChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+  const [focusAnchor, setFocusAnchor] = useState<TooltipAnchor | null>(null);
+  const tip = useChartTooltip<number>();
+
+  useLayoutEffect(() => {
+    if (fixedWidth !== undefined) return;
+    const element = containerRef.current;
+    if (!element) return;
+    setMeasuredWidth(element.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setMeasuredWidth(Math.floor(entry.contentRect.width));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [fixedWidth]);
+
+  useEffect(() => {
+    if (focusIndex !== null && focusIndex >= data.length) setFocusIndex(data.length ? data.length - 1 : null);
+  }, [data.length, focusIndex]);
+
+  const ticks = useMemo(
+    () => yTicks ?? durationTicks(data.reduce((largest, datum) => Math.max(largest, datum.value), 0)),
+    [yTicks, data],
+  );
+
+  const width = Math.max(0, fixedWidth ?? measuredWidth);
+  const empty = data.length === 0;
+  const max = Math.max(1, ticks[ticks.length - 1] ?? 1);
+  const plotWidth = Math.max(0, width - AXIS_LEFT);
+  const band = data.length > 0 ? plotWidth / data.length : 0;
+  const labelEvery = Math.max(1, Math.ceil(data.length / Math.max(1, Math.floor(plotWidth / 46))));
+  const totalHeight = height + AXIS_BOTTOM;
+  const y = (value: number) => height - (Math.min(Math.max(0, value), max) / max) * height;
+  const xAt = (index: number) => AXIS_LEFT + band * index + band / 2;
+
+  const points = data.map((datum, index) => `${coord(xAt(index))},${coord(y(datum.value))}`);
+  const line = points.length > 0 ? `M${points.join(' L')}` : '';
+  const wash =
+    points.length > 0 ? `M${coord(xAt(0))},${height} L${points.join(' L')} L${coord(xAt(data.length - 1))},${height} Z` : '';
+
+  function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (data.length === 0) return;
+    let next: number | null = null;
+    if (event.key === 'ArrowRight') next = focusIndex === null ? 0 : Math.min(data.length - 1, focusIndex + 1);
+    else if (event.key === 'ArrowLeft') next = focusIndex === null ? data.length - 1 : Math.max(0, focusIndex - 1);
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = data.length - 1;
+    else if (event.key === 'Escape') {
+      setFocusIndex(null);
+      setFocusAnchor(null);
+      return;
+    }
+    if (next === null) return;
+    event.preventDefault();
+    tip.clear();
+    setFocusIndex(next);
+    const rect = containerRef.current?.getBoundingClientRect();
+    const datum = data[next];
+    // Anchor the keyboard readout at the focused point.
+    if (rect && datum) setFocusAnchor({ x: rect.left + xAt(next), y: rect.top + y(datum.value) });
+  }
+
+  /** The bucket under the pointer: the nearest point's band. */
+  function indexAt(event: ReactPointerEvent<SVGRectElement>): number | null {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || data.length === 0) return null;
+    const index = Math.floor(((event.clientX - rect.left) / rect.width) * data.length);
+    return Math.min(data.length - 1, Math.max(0, index));
+  }
+
+  const pointerIndex = tip.active?.key ?? null;
+  const activeIndex = pointerIndex ?? focusIndex;
+  const anchor = tip.active?.anchor ?? (focusIndex !== null ? focusAnchor : null);
+  const activeDatum = activeIndex !== null ? data[activeIndex] : undefined;
+  const focusedDatum = focusIndex !== null ? data[focusIndex] : undefined;
+
+  return (
+    <div
+      ref={containerRef}
+      className="sp-area"
+      data-stale={stale || undefined}
+      data-empty={empty || undefined}
+      role="group"
+      aria-label={empty ? ariaLabel : `${ariaLabel}. Use the arrow keys to step through the points.`}
+      tabIndex={empty ? undefined : 0}
+      onKeyDown={onKeyDown}
+      onBlur={() => {
+        setFocusIndex(null);
+        setFocusAnchor(null);
+        tip.clear();
+      }}
+      style={{ height: totalHeight }}
+    >
+      {width > 0 ? (
+        <svg width={width} height={totalHeight} aria-hidden="true" style={{ '--c': color } as CSSProperties}>
+          {ticks.map((tick) => (
+            <g key={tick}>
+              {tick > 0 ? <line className="sp-area__grid" x1={AXIS_LEFT} x2={width} y1={y(tick) + 0.5} y2={y(tick) + 0.5} /> : null}
+              <text className="sp-area__ylabel" x={AXIS_LEFT - 8} y={y(tick)} dy="0.32em" textAnchor="end">
+                {formatTick(tick)}
+              </text>
+            </g>
+          ))}
+          <line className="sp-area__baseline" x1={AXIS_LEFT} x2={width} y1={height + 0.5} y2={height + 0.5} />
+          {empty ? null : (
+            <>
+              <path className="sp-area__wash" d={wash} />
+              <path className="sp-area__line" d={line} />
+            </>
+          )}
+          {data.map((datum, index) =>
+            index % labelEvery === 0 ? (
+              <text key={datum.key} className="sp-area__xlabel" x={xAt(index)} y={height + 15} textAnchor="middle">
+                {datum.label}
+              </text>
+            ) : null,
+          )}
+          {activeDatum && activeIndex !== null ? (
+            <line
+              className="sp-area__crosshair"
+              data-focus={pointerIndex === null || undefined}
+              x1={Math.round(xAt(activeIndex)) + 0.5}
+              x2={Math.round(xAt(activeIndex)) + 0.5}
+              y1={0}
+              y2={height}
+            />
+          ) : null}
+          {data.map((datum, index) =>
+            index === activeIndex || data.length === 1 ? (
+              <circle key={datum.key} className="sp-area__dot" cx={xAt(index)} cy={y(datum.value)} r={DOT_RADIUS} />
+            ) : null,
+          )}
+          {empty ? null : (
+            <rect
+              className="sp-area__hit"
+              x={AXIS_LEFT}
+              y={0}
+              width={plotWidth}
+              height={height}
+              onPointerMove={(event) => {
+                const index = indexAt(event);
+                if (index !== null) tip.showAtPointer(index, event);
+              }}
+              onPointerLeave={tip.clear}
+            />
+          )}
+        </svg>
+      ) : null}
+      <span className="sp-visually-hidden" aria-live="polite">
+        {focusedDatum ? <AreaReadout content={focusedDatum.tooltip} /> : null}
+      </span>
+      <ChartTooltip content={activeDatum?.tooltip ?? null} anchor={anchor ?? null} />
+    </div>
+  );
+}
+
+/** The focused point's readout as plain text, for screen readers (the tooltip itself is hidden from them). */
+function AreaReadout({ content }: { content: ChartTooltipContent }) {
+  return (
+    <>
+      {content.title}
+      {content.subtitle ? <>. {content.subtitle}</> : null}
+      {(content.rows ?? []).map((row) => (
+        <span key={row.id}>
+          . {row.label}: {row.value}
+        </span>
+      ))}
+    </>
   );
 }

@@ -195,7 +195,7 @@ function WorkspaceGate({ client, session }: { client: StudioPulseClient; session
   }
   return (
     <WorkspaceContext.Provider value={value}>
-      <Shell membersProblem={members.problem} onRetryMembers={() => void members.reload()} />
+      <Shell key={`${userId}:${value.workspace.id}`} membersProblem={members.problem} onRetryMembers={() => void members.reload()} />
     </WorkspaceContext.Provider>
   );
 }

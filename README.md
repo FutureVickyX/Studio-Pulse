@@ -6,14 +6,17 @@ without turning the app into employee surveillance.**
 Studio Pulse is a lightweight Windows companion for creative teams working in graphic design,
 brand identity, motion, video and 3D. It records which creative application is in the
 foreground, separates **active** time from **idle** time, and shows honest daily and weekly totals.
-Nothing is uploaded, nothing is hidden, and nothing beyond the application name and timing is
-collected.
+Nothing is uploaded unless you sign in to a workspace, nothing is hidden, and nothing beyond the
+application name and timing is collected.
 
 > **Status: Phase 1 (desktop tracking), Phase 2A (Supabase accounts, workspaces, RLS and desktop
-> sync) and Phase 2B (the team workspace: projects, tasks, notes and time attribution, in
-> `apps/web`).** The desktop app runs on Windows 10/11; the workspace runs in any modern browser.
-> Quick capture, manual time entries and billable time are Phase 3. macOS and Linux desktops are
-> not supported.
+> sync), Phase 2B (the team workspace: projects, tasks, notes and time attribution, in
+> `apps/web`) and Phase 3A (analytics in the workspace: an Analytics page and project
+> Insights), plus Phase 3B (notifications, reminders and personal summaries; the development
+> scheduler is deployed and verified).** The desktop app runs on Windows
+> 10/11; the workspace runs in any modern browser.
+> Quick capture, manual time entries and billable time are not built yet. macOS and Linux
+> desktops are not supported.
 
 ## What Phase 1 does
 
@@ -58,6 +61,32 @@ The workspace is online-only; the desktop tracker still works fully offline. The
 Notes and Projects entries open the workspace when the build links to one. See
 [docs/workspace.md](docs/workspace.md).
 
+## What Phase 3A adds: analytics
+
+- **Analytics page.** *My work* and *Workspace* views of synced time for a range: active,
+  foreground, idle and unattributed totals, activity by day, week or month, time by application,
+  project and task, task progress and deadlines, and recent sessions. Days follow a reporting time
+  zone you choose. Summary and session exports in CSV and JSON.
+- **Project Insights** on each project page: the project's time and task progress over all time
+  or the last 90 or 30 days.
+- **Added up on the server, under RLS.** One read-only function (migration 10) runs as the
+  signed-in user, so members see only their own time and owners and admins see teammates' time
+  only when the workspace owner allows it. Overlapping time from several devices is counted once.
+  No scores, rankings or judgements; people are listed alphabetically. See
+  [docs/workspace.md §8](docs/workspace.md#8-analytics-phase-3a) and
+  [docs/privacy.md](docs/privacy.md#analytics-in-the-team-workspace).
+
+## What Phase 3B adds: workflow automation
+
+- A recipient-private notification center with unread counts and confirmed read actions.
+- Task assignments, project-lead reviews, optional completion notices and calendar reminders.
+- Personal preferences, quiet hours, time zones and administrator workspace rule switches.
+- Opt-in daily/weekly in-app summaries using Phase 3A's reporting math.
+- A server outbox with idempotent delivery, leases, bounded retries and safe outcome logs.
+
+See [deployment and limits](docs/automation.md) and [the verification report](docs/handoff-phase-3b.md).
+The scheduler runs on Supabase after deployment; Windows tracking and offline sync are unchanged.
+
 ## Quick start (development)
 
 Prerequisites: Windows 10/11, Node.js ≥ 22, Rust (stable, MSVC), Visual Studio Build Tools with
@@ -98,11 +127,16 @@ Verified end-to-end with the real app on this machine:
 - The webviews were refused tray, menu, image and event-emit APIs, and the indicator was refused
   settings changes.
 
-Phase 2A and 2B were verified against a real Supabase project (`studio-pulse-dev`): all eight
+Phase 2A and 2B were verified against a real Supabase project (`studio-pulse-dev`): their nine
 migrations applied, all 35 RLS/RPC checks passing as real users through the publishable key, the
 workspace's data layer passing its live suite as three real users, and both Rust live tests (the
 HTTP contract and the full desktop sync pipeline) passing. See
 [docs/supabase.md §3](docs/supabase.md#3-verify-against-the-real-project).
+
+Phase 3A adds a tenth migration (`20261112090000_analytics.sql`), tested on a Supabase-shaped
+Postgres (PGlite) and against an independent TypeScript implementation
+([docs/testing.md](docs/testing.md#phase-3a-analytics)). Apply it with `npm run supabase:migrate`
+before using Analytics; without it the page says the database needs migration 10.
 
 Still to do on a real install (see [docs/testing.md](docs/testing.md#3-manual-windows-verification-checklist)):
 run the installer, sign out/in or reboot with launch at login enabled, and check Blender detection.
@@ -112,13 +146,13 @@ run the installer, sign out/in or reboot with launch at login enabled, and check
 | Path | What |
 | --- | --- |
 | `apps/desktop` | Tauri 2 app: React UI (`src/`) and Rust core (`src-tauri/`) |
-| `apps/web` | Team workspace (Phase 2B): React + Vite static app on Supabase — see [docs/workspace.md](docs/workspace.md) |
+| `apps/web` | Team workspace (Phases 2B and 3A): React + Vite static app on Supabase — see [docs/workspace.md](docs/workspace.md) |
 | `packages/shared-types` | Rust⇄UI contract types + built-in application registry JSON |
 | `packages/validation` | zod schemas for settings, applications and inputs |
-| `packages/time-engine` | Reporting maths: ranges, time zones, day splitting, aggregation |
+| `packages/time-engine` | Reporting maths: ranges, time zones, day splitting, aggregation, and the analytics reconciliation (`reconcileIntervals`, `summarizeReport`) |
 | `packages/ui` | Design tokens, React primitives, SVG charts |
 | `packages/database` | Typed Supabase client factory, `Database` types matching the migrations, publishable-key-only config validation |
-| `supabase/` | Ordered Postgres migrations with RLS and RPCs (Phases 2A and 2B) — see [docs/supabase.md](docs/supabase.md) |
+| `supabase/` | Ten ordered Postgres migrations with RLS and RPCs (Phases 2A, 2B and 3A) — see [docs/supabase.md](docs/supabase.md) |
 | `tests/` | TS unit and integration tests, live tests against a real project (`tests/live`), and shared tracking scenario fixtures |
 | `docs/` | [Architecture](docs/architecture.md), [installation](docs/installation.md), [privacy](docs/privacy.md), [Supabase](docs/supabase.md), [workspace](docs/workspace.md), [testing](docs/testing.md) |
 
@@ -127,9 +161,10 @@ run the installer, sign out/in or reboot with launch at login enabled, and check
 - [docs/architecture.md](docs/architecture.md) covers the process model, accounting rules,
   registry, storage, the command allowlist, startup and the Phase-2 seams.
 - [docs/installation.md](docs/installation.md) covers building, installing and launch-at-login.
-- [docs/supabase.md](docs/supabase.md) covers the Supabase project, migrations, RLS and sync.
+- [docs/supabase.md](docs/supabase.md) covers the Supabase project, migrations, RLS, sync and the
+  analytics function.
 - [docs/workspace.md](docs/workspace.md) covers the team workspace: setup, deployment, security,
-  conflicts, offline behaviour and time attribution.
+  conflicts, offline behaviour, time attribution and analytics.
 - [docs/privacy.md](docs/privacy.md) lists exactly what is and isn't recorded.
 - [docs/testing.md](docs/testing.md) covers automated tests and the manual Windows checklist.
 - [docs/ui-restyle.md](docs/ui-restyle.md) records the Figma restyle, review fixes and Windows/browser verification.

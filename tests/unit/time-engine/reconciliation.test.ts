@@ -251,7 +251,7 @@ describe('summarize: reconciliation on generated messy input', () => {
     for (const [situation, count] of Object.entries(seen)) {
       expect(count, `generated cases with ${situation}`).toBeGreaterThanOrEqual(10);
     }
-  });
+  }, 30_000); // ~2 s alone; slower when the full suite runs files in parallel
 });
 
 describe('splitByLocalDay: generated intervals in DST and fractional-offset zones', () => {

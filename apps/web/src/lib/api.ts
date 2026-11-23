@@ -10,9 +10,10 @@
  *   response at the project's max rows without saying so.
  */
 
-import type { StudioPulseClient, Tables, TablesInsert, TablesUpdate } from '@studio-pulse/database';
+import type { FunctionArgs, FunctionReturns, StudioPulseClient, Tables, TablesInsert, TablesUpdate } from '@studio-pulse/database';
+import type { ReportBucket, ReportRow } from '@studio-pulse/time-engine';
 
-import { ProblemError, isNetworkError, toProblem } from './errors';
+import { ProblemError, isNetworkError, toProblem, toReportProblem } from './errors';
 import { compareNotes, compareProjects, compareSubtasks } from './model';
 import type { Member, Note, Project, Subtask, Task, TaskComment, WorkspaceInfo } from './model';
 import { TIME_ENTRY_COLUMNS } from './time';
@@ -488,6 +489,217 @@ export async function attributeTime(
     );
   }
   return changed;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------------------------
+
+/** A report's arguments (`analytics_time_summary`), camelCase. Days are local to `timeZone`. */
+export interface AnalyticsSummaryParams {
+  readonly workspaceId: string;
+  /** Last local day, inclusive (`YYYY-MM-DD`). */
+  readonly toDay: string;
+  /** IANA name, e.g. `Europe/London`, or `UTC`. */
+  readonly timeZone: string;
+  /** First local day, inclusive. Null or omitted: from the local day of the first session in scope. */
+  readonly fromDay?: string | null;
+  /** Period rows by day (the database default), ISO week or month. */
+  readonly bucket?: ReportBucket | null;
+  /** Only these people's time. Null or omitted: everyone whose time the caller can read. */
+  readonly userIds?: readonly string[] | null;
+  /** Only this project's time. */
+  readonly projectId?: string | null;
+  /** Only time with no project and no task. Not together with `projectId`. */
+  readonly unattributed?: boolean | null;
+  /** Only this application's time. */
+  readonly applicationId?: string | null;
+}
+
+type ReportArgs = FunctionArgs<'analytics_time_summary'>;
+type ReportRecord = FunctionReturns<'analytics_time_summary'>[number];
+
+/**
+ * The function's arguments. Optional ones that are null or undefined are left out, so the call
+ * names only the arguments it sets and the database defaults apply to the rest.
+ */
+export function reportArgs(params: AnalyticsSummaryParams): ReportArgs {
+  const args: ReportArgs = { p_workspace_id: params.workspaceId, p_to: params.toDay, p_time_zone: params.timeZone };
+  if (params.fromDay != null) args.p_from = params.fromDay;
+  if (params.bucket != null) args.p_bucket = params.bucket;
+  if (params.userIds != null) args.p_user_ids = [...params.userIds];
+  if (params.projectId != null) args.p_project_id = params.projectId;
+  if (params.unattributed != null) args.p_unattributed = params.unattributed;
+  if (params.applicationId != null) args.p_application_id = params.applicationId;
+  return args;
+}
+
+/** A row of the report, camelCase: the same shape as time-engine's `summarizeReport` rows. */
+export function toReportRow(record: ReportRecord): ReportRow {
+  return {
+    dimension: record.dimension,
+    bucketStart: record.bucket_start,
+    userId: record.user_id,
+    applicationId: record.application_id,
+    applicationName: record.application_name,
+    projectId: record.project_id,
+    taskId: record.task_id,
+    unattributed: record.unattributed,
+    // bigint columns arrive as JSON numbers; Number() would also read one sent as a string.
+    activeMs: Number(record.active_ms),
+    idleMs: Number(record.idle_ms),
+    entryCount: Number(record.entry_count),
+    overlapMs: Number(record.overlap_ms),
+    teammatesVisible: record.teammates_visible,
+  };
+}
+
+/**
+ * One report, aggregated on the server. The function is security invoker, so the caller's
+ * row-level security decides whose time counts. Every row is returned: the result is read in
+ * pages with `.range()` until a short page, because PostgREST cuts a function's result at max
+ * rows like any list. Each page runs the report again, so pages read while sessions sync are not
+ * one snapshot. Errors go through `toReportProblem` (timeouts and a database without migration
+ * 10 are explained).
+ */
+export async function analyticsSummary(client: StudioPulseClient, params: AnalyticsSummaryParams): Promise<ReportRow[]> {
+  const args = reportArgs(params);
+  const rows = await listAll<ReportRecord>(async (from, to) => {
+    const page = await client.rpc('analytics_time_summary', args).range(from, to);
+    if (page.error) throw new ProblemError(toReportProblem(page.error));
+    return { data: page.data, error: null };
+  });
+  const report = rows.map(toReportRow);
+  REPORT_READ_AT.set(report, Date.now());
+  return report;
+}
+
+/**
+ * When each report was read, kept beside the rows themselves: every page that caches a report
+ * (Analytics, Project Insights) shares the cache key, so "Updated HH:MM" is true whichever page
+ * read it, and after leaving a page and coming back to a cached report.
+ */
+const REPORT_READ_AT = new WeakMap<object, number>();
+
+/** When `analyticsSummary` returned these rows (epoch ms), or null for rows it did not return. */
+export function reportReadAt(rows: readonly ReportRow[]): number | null {
+  return REPORT_READ_AT.get(rows) ?? null;
+}
+
+/** One of the caller's own sessions (a synced time entry) as the Analytics session list shows it. */
+export type MySession = Pick<
+  Tables<'time_entries'>,
+  'id' | 'started_at' | 'ended_at' | 'application_id' | 'application_name' | 'kind' | 'active_ms' | 'idle_ms' | 'project_id' | 'task_id'
+>;
+
+export const MY_SESSION_COLUMNS =
+  'id, started_at, ended_at, application_id, application_name, kind, active_ms, idle_ms, project_id, task_id';
+
+/** No time entry lasts longer (the table's CHECK), so a session overlapping a range started at most this long before it. */
+export const MAX_SESSION_MS = 744 * 3_600_000;
+
+export interface MySessionsQuery {
+  readonly workspaceId: string;
+  /** The signed-in user: these reads only ever ask for the caller's own sessions. */
+  readonly userId: string;
+  /** Range start (inclusive), an ISO instant. */
+  readonly startIso: string;
+  /** Range end (exclusive), an ISO instant. */
+  readonly endIso: string;
+  /**
+   * Only sessions with no project and no task: the page's "Unattributed" project filter or the
+   * card's "Only unattributed" toggle (the report's `p_unattributed`).
+   */
+  readonly unattributedOnly?: boolean;
+  /** Only sessions on this project (the page's project filter; the report's `p_project_id`). */
+  readonly projectId?: string;
+  /** Only sessions in this application (the page's application filter; the report's `p_application_id`). */
+  readonly applicationId?: string;
+}
+
+export interface MySessionsPageQuery extends MySessionsQuery {
+  /**
+   * The last session of the previous page, its `started_at` and `id` exactly as returned: the page
+   * continues after it (keyset paging, newest first). Omitted or null for the first page.
+   */
+  readonly before?: { readonly startedAt: string; readonly id: string } | null;
+  /** Sessions per page, 1 to `PAGE_ROWS`. */
+  readonly limit: number;
+}
+
+/** A value in PostgREST's `or=(…)` syntax, quoted so its `:` `.` and `+` are read literally. */
+function orValue(value: string): string {
+  return `"${value.replace(/["\\]/g, (char) => `\\${char}`)}"`;
+}
+
+/**
+ * One page of the caller's own sessions overlapping [startIso, endIso), newest first
+ * (`started_at` desc, then `id` desc). Sessions are whole, not clipped to the range. The lower
+ * bound on `started_at` (no session lasts longer than 744 h) keeps every page an index range scan
+ * on (user_id, started_at) instead of a walk through all older history.
+ */
+export async function listMySessions(client: StudioPulseClient, input: MySessionsPageQuery): Promise<MySession[]> {
+  const lowerIso = new Date(Date.parse(input.startIso) - MAX_SESSION_MS).toISOString();
+  const limit = Math.max(1, Math.min(PAGE_ROWS, Math.floor(input.limit)));
+  let query = client
+    .from('time_entries')
+    .select(MY_SESSION_COLUMNS)
+    .eq('workspace_id', input.workspaceId)
+    .eq('user_id', input.userId)
+    .lt('started_at', input.endIso)
+    .gt('ended_at', input.startIso)
+    .gte('started_at', lowerIso);
+  // The page's filters, as the report applies them (plain column checks), so the list and the
+  // figures around it agree. A project and "unattributed" together match nothing, as in the report.
+  if (input.projectId !== undefined) query = query.eq('project_id', input.projectId);
+  if (input.applicationId !== undefined) query = query.eq('application_id', input.applicationId);
+  if (input.unattributedOnly) query = query.is('project_id', null).is('task_id', null);
+  if (input.before) {
+    const startedAt = orValue(input.before.startedAt);
+    query = query.or(`started_at.lt.${startedAt},and(started_at.eq.${startedAt},id.lt.${orValue(input.before.id)})`);
+  }
+  const rows = list(await query.order('started_at', { ascending: false }).order('id', { ascending: false }).limit(limit));
+  return rows as MySession[];
+}
+
+/**
+ * The caller's sessions in the range, newest first, read page by page (keyset) up to `max`.
+ * `truncated` says there were more than `max`.
+ */
+export async function listAllMySessions(
+  client: StudioPulseClient,
+  input: MySessionsQuery,
+  max: number,
+): Promise<{ sessions: MySession[]; truncated: boolean }> {
+  const sessions: MySession[] = [];
+  let before: MySessionsPageQuery['before'] = null;
+  // One more than `max` tells a range of exactly `max` sessions from a longer one.
+  for (let wanted = max + 1; wanted > 0; ) {
+    const limit = Math.min(PAGE_ROWS, wanted);
+    const page = await listMySessions(client, { ...input, before, limit });
+    sessions.push(...page);
+    wanted -= page.length;
+    const last = page[page.length - 1];
+    if (!last || page.length < limit) break;
+    before = { startedAt: last.started_at, id: last.id };
+  }
+  const truncated = sessions.length > max;
+  return { sessions: truncated ? sessions.slice(0, max) : sessions, truncated };
+}
+
+/** The "My sessions" export reads at most this many sessions. */
+export const MY_SESSIONS_EXPORT_MAX = 50_000;
+
+/** Every session in the range for the "My sessions" export, or a clear refusal past `MY_SESSIONS_EXPORT_MAX`. */
+export async function listMySessionsForExport(client: StudioPulseClient, input: MySessionsQuery): Promise<MySession[]> {
+  const { sessions, truncated } = await listAllMySessions(client, input, MY_SESSIONS_EXPORT_MAX);
+  if (truncated) {
+    throw new ProblemError({
+      kind: 'invalid',
+      message: 'This range has more than 50,000 sessions, too many for one export. Choose a shorter range.',
+    });
+  }
+  return sessions;
 }
 
 export type { Tables };

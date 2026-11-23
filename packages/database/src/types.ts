@@ -8,7 +8,8 @@
  * - text columns constrained by `CHECK (col IN (...))` are typed as their literal union
  *   (`time_entries.kind`, `end_reason`, `source`);
  * - columns of `RETURNS TABLE` functions carry their real nullability and, where the function body
- *   fixes them, literal values (`sync_time_entries` → `entry_id`, `status`, `detail`);
+ *   fixes them, literal values (`sync_time_entries` → `entry_id`, `status`, `detail`;
+ *   `analytics_time_summary` → `dimension`, and its `p_bucket` argument);
  * - functions that only run as triggers are omitted (they cannot be called through the API).
  *
  * `Insert` / `Update` describe the table shape, exactly like generated types: the column-level
@@ -23,6 +24,103 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      notification_preferences: {
+        Row: {
+          workspace_id: string;
+          user_id: string;
+          config: Json;
+          updated_at: string;
+        };
+        Insert: {
+          workspace_id: string;
+          user_id?: string;
+          config?: Json;
+          updated_at?: string;
+        };
+        Update: {
+          workspace_id?: string;
+          user_id?: string;
+          config?: Json;
+          updated_at?: string;
+        };
+        Relationships: [
+          { foreignKeyName: 'notification_preferences_user_id_fkey'; columns: ['user_id']; isOneToOne: false; referencedRelation: 'profiles'; referencedColumns: ['id']; },
+          { foreignKeyName: 'notification_preferences_workspace_id_fkey'; columns: ['workspace_id']; isOneToOne: false; referencedRelation: 'workspaces'; referencedColumns: ['id']; },
+        ];
+      };
+      workspace_automation_settings: {
+        Row: {
+          workspace_id: string;
+          enabled: boolean;
+          events_enabled: boolean;
+          reminders_enabled: boolean;
+          digests_enabled: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          workspace_id: string;
+          enabled?: boolean;
+          events_enabled?: boolean;
+          reminders_enabled?: boolean;
+          digests_enabled?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          workspace_id?: string;
+          enabled?: boolean;
+          events_enabled?: boolean;
+          reminders_enabled?: boolean;
+          digests_enabled?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [
+          { foreignKeyName: 'workspace_automation_settings_workspace_id_fkey'; columns: ['workspace_id']; isOneToOne: true; referencedRelation: 'workspaces'; referencedColumns: ['id']; },
+        ];
+      };
+      notifications: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          recipient_id: string;
+          kind: 'assigned' | 'review' | 'completed' | 'due_soon' | 'due_today' | 'overdue' | 'awaiting_review' | 'inactive' | 'daily' | 'weekly';
+          title: string;
+          task_id: string | null;
+          project_id: string | null;
+          payload: Json;
+          created_at: string;
+          read_at: string | null;
+        };
+        Insert: {
+          id: string;
+          workspace_id: string;
+          recipient_id: string;
+          kind: 'assigned' | 'review' | 'completed' | 'due_soon' | 'due_today' | 'overdue' | 'awaiting_review' | 'inactive' | 'daily' | 'weekly';
+          title: string;
+          task_id?: string | null;
+          project_id?: string | null;
+          payload?: Json;
+          created_at?: string;
+          read_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          recipient_id?: string;
+          kind?: 'assigned' | 'review' | 'completed' | 'due_soon' | 'due_today' | 'overdue' | 'awaiting_review' | 'inactive' | 'daily' | 'weekly';
+          title?: string;
+          task_id?: string | null;
+          project_id?: string | null;
+          payload?: Json;
+          created_at?: string;
+          read_at?: string | null;
+        };
+        Relationships: [
+          { foreignKeyName: 'notifications_project_id_fkey'; columns: ['project_id']; isOneToOne: false; referencedRelation: 'projects'; referencedColumns: ['id']; },
+          { foreignKeyName: 'notifications_recipient_id_fkey'; columns: ['recipient_id']; isOneToOne: false; referencedRelation: 'profiles'; referencedColumns: ['id']; },
+          { foreignKeyName: 'notifications_task_id_fkey'; columns: ['task_id']; isOneToOne: false; referencedRelation: 'tasks'; referencedColumns: ['id']; },
+          { foreignKeyName: 'notifications_workspace_id_fkey'; columns: ['workspace_id']; isOneToOne: false; referencedRelation: 'workspaces'; referencedColumns: ['id']; },
+        ];
+      };
       profiles: {
         Row: {
           id: string;
@@ -623,9 +721,54 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      claim_automation_jobs: { Args: { p_limit?: number }; Returns: Json; };
+      finish_automation_job: { Args: { p_id: string; p_token: string; p_summary?: Json | null }; Returns: string; };
+      fail_automation_job: { Args: { p_id: string; p_token: string; p_code: string }; Returns: undefined; };
+      authorize_automation_worker: { Args: { p_credential: string }; Returns: boolean; };
+      plan_automation_jobs: { Args: { p_limit?: number }; Returns: number; };
+      automation_outcomes: { Args: { p_workspace_id: string }; Returns: Json; };
       accept_invitation: {
         Args: { p_token: string };
         Returns: string;
+      };
+      analytics_time_summary: {
+        /**
+         * Days are local calendar days in `p_time_zone` (an IANA name). `p_from` null starts at the
+         * first entry in scope. Set at most one of `p_project_id` / `p_unattributed`.
+         */
+        Args: {
+          p_workspace_id: string;
+          /** Last local day, inclusive (`YYYY-MM-DD`). */
+          p_to: string;
+          p_time_zone: string;
+          p_from?: string | null;
+          p_bucket?: 'day' | 'week' | 'month' | null;
+          /** Null: everyone whose time the caller can read. */
+          p_user_ids?: string[] | null;
+          p_project_id?: string | null;
+          /** Only time with no project and no task. */
+          p_unattributed?: boolean | null;
+          p_application_id?: string | null;
+        };
+        /** Exactly one `total` row first, then period, member, project, task, application rows. */
+        Returns: {
+          dimension: 'total' | 'period' | 'member' | 'project' | 'task' | 'application';
+          bucket_start: string | null;
+          user_id: string | null;
+          application_id: string | null;
+          application_name: string | null;
+          project_id: string | null;
+          task_id: string | null;
+          /** Project rows only: true for the no-project, no-task row. */
+          unattributed: boolean | null;
+          active_ms: number;
+          idle_ms: number;
+          entry_count: number;
+          /** Total row only (0 elsewhere): time recorded twice and counted once. */
+          overlap_ms: number;
+          /** Total row only: whether teammates' time is included. */
+          teammates_visible: boolean | null;
+        }[];
       };
       create_invitation: {
         Args: {

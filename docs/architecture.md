@@ -498,6 +498,22 @@ Phase 2A is built; the full operator guide is [docs/supabase.md](supabase.md).
 
 ---
 
+## Phase 3B: server automation
+
+The existing Supabase identity and workspace authorization now support recipient-owned
+notifications/preferences and administrator rule switches. Task triggers create a private outbox;
+bounded planner cursors create calendar reminders and opt-in digest occurrences. A trusted Edge
+worker claims leased jobs with `SKIP LOCKED` and confirms delivery transactionally. Stable IDs
+and occurrence keys prevent duplicates after retries. Clients can never enqueue system notices.
+
+Digests reuse Phase 3A's canonical TypeScript reporting and task builders with explicit recipient
+and workspace filters. The existing reporting RPC remains an authenticated invoker. Cron and
+`pg_net` call the Edge worker using a limited Vault key; only its hash is stored for verification.
+The Edge runtime's privileged credential stays inside that runtime. Browser refresh is only for
+already delivered data. Local tracking and SQLite synchronization have no new dependency.
+See [automation.md](automation.md) for deployment, reliability and limits, and
+[handoff-phase-3b.md](handoff-phase-3b.md) for actual verification status.
+
 ## 15. Decision log
 
 | # | Decision | Why |

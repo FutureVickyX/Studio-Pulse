@@ -1,3 +1,4 @@
+import { NOTIFICATION_KINDS } from './automation';
 /**
  * A runtime description of the remote schema, tied to the hand-written `Database` type in both
  * directions:
@@ -96,6 +97,32 @@ function oneOf<C extends ColumnSpec, const V extends readonly string[]>(column: 
 
 /** Every table in `public`, every column in declaration order. */
 export const TABLE_COLUMNS = {
+  notification_preferences: {
+    workspace_id: req('uuid'),
+    user_id: dflt('uuid'),
+    config: dflt('jsonb'),
+    updated_at: dflt('timestamptz'),
+  },
+  workspace_automation_settings: {
+    workspace_id: req('uuid'),
+    enabled: dflt('boolean'),
+    events_enabled: dflt('boolean'),
+    reminders_enabled: dflt('boolean'),
+    digests_enabled: dflt('boolean'),
+    updated_at: dflt('timestamptz'),
+  },
+  notifications: {
+    id: req('uuid'),
+    workspace_id: req('uuid'),
+    recipient_id: req('uuid'),
+    kind: oneOf(req('text'), NOTIFICATION_KINDS),
+    title: req('text'),
+    task_id: opt('uuid'),
+    project_id: opt('uuid'),
+    payload: dflt('jsonb'),
+    created_at: dflt('timestamptz'),
+    read_at: opt('timestamptz'),
+  },
   profiles: {
     id: req('uuid'),
     display_name: req('text'),
@@ -246,6 +273,19 @@ function fk<
 }
 
 export const TABLE_RELATIONSHIPS = {
+  notification_preferences: [
+    fk('notification_preferences_user_id_fkey', ['user_id'], 'profiles', ['id'], false),
+    fk('notification_preferences_workspace_id_fkey', ['workspace_id'], 'workspaces', ['id'], false),
+  ],
+  workspace_automation_settings: [
+    fk('workspace_automation_settings_workspace_id_fkey', ['workspace_id'], 'workspaces', ['id'], true),
+  ],
+  notifications: [
+    fk('notifications_project_id_fkey', ['project_id'], 'projects', ['id'], false),
+    fk('notifications_recipient_id_fkey', ['recipient_id'], 'profiles', ['id'], false),
+    fk('notifications_task_id_fkey', ['task_id'], 'tasks', ['id'], false),
+    fk('notifications_workspace_id_fkey', ['workspace_id'], 'workspaces', ['id'], false),
+  ],
   profiles: [fk('profiles_id_fkey', ['id'], 'users', ['id'], true)],
   workspaces: [fk('workspaces_created_by_fkey', ['created_by'], 'users', ['id'], false)],
   workspace_members: [
@@ -313,10 +353,49 @@ export interface FunctionSpec {
 
 /** Every non-trigger function in `public`, with its argument names in declaration order. */
 export const FUNCTIONS = {
+  claim_automation_jobs: { args: { p_limit: dflt('integer') }, returns: { kind: 'scalar', type: 'jsonb' }, securityDefiner: true },
+  finish_automation_job: { args: { p_id: req('uuid'), p_token: req('uuid'), p_summary: optDflt('jsonb') }, returns: { kind: 'scalar', type: 'text' }, securityDefiner: true },
+  fail_automation_job: { args: { p_id: req('uuid'), p_token: req('uuid'), p_code: req('text') }, returns: { kind: 'void' }, securityDefiner: true },
+  authorize_automation_worker: { args: { p_credential: req('text') }, returns: { kind: 'scalar', type: 'boolean' }, securityDefiner: true },
+  plan_automation_jobs: { args: { p_limit: dflt('integer') }, returns: { kind: 'scalar', type: 'integer' }, securityDefiner: true },
+  automation_outcomes: { args: { p_workspace_id: req('uuid') }, returns: { kind: 'scalar', type: 'jsonb' }, securityDefiner: true },
   accept_invitation: {
     args: { p_token: req('text') },
     returns: { kind: 'scalar', type: 'uuid' },
     securityDefiner: true,
+  },
+  analytics_time_summary: {
+    args: {
+      p_workspace_id: req('uuid'),
+      p_to: req('date'),
+      p_time_zone: req('text'),
+      p_from: optDflt('date'),
+      p_bucket: oneOf(optDflt('text'), ['day', 'week', 'month']),
+      p_user_ids: optDflt('uuid[]'),
+      p_project_id: optDflt('uuid'),
+      p_unattributed: optDflt('boolean'),
+      p_application_id: optDflt('text'),
+    },
+    returns: {
+      kind: 'table',
+      columns: {
+        dimension: oneOf(req('text'), ['total', 'period', 'member', 'project', 'task', 'application']),
+        bucket_start: opt('date'),
+        user_id: opt('uuid'),
+        application_id: opt('text'),
+        application_name: opt('text'),
+        project_id: opt('uuid'),
+        task_id: opt('uuid'),
+        unattributed: opt('boolean'),
+        active_ms: req('bigint'),
+        idle_ms: req('bigint'),
+        entry_count: req('integer'),
+        overlap_ms: req('bigint'),
+        teammates_visible: opt('boolean'),
+      },
+    },
+    // SECURITY INVOKER: RLS on time_entries decides whose time is counted.
+    securityDefiner: false,
   },
   create_invitation: {
     args: { p_workspace_id: req('uuid'), p_email: req('text'), p_role: dflt('enum:workspace_role') },

@@ -196,7 +196,7 @@ export class SupabaseTestDb {
         await pg.exec(sql);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(`migration ${file} failed: ${reason}`);
+        throw new Error(`migration ${file} failed: ${reason}`, { cause: error });
       } finally {
         await pg.exec('reset role');
       }

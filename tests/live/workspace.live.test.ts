@@ -6,8 +6,8 @@
  * Environment (tests/live/README.md):
  *   SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY   public values
  *   SP_LIVE_USERS_FILE                       JSON {users:[{label:'a'|'b'|'c', email, password, id}]}
- * Everything the run creates is deleted at the end through the users' own sessions; the users
- * themselves are deleted by whoever provisioned them.
+ * The provisioning operator deletes disposable workspaces and users after the run. Clients
+ * intentionally have no workspace DELETE grant.
  */
 
 import { readFileSync } from 'node:fs';
@@ -67,14 +67,18 @@ describe.skipIf(!configured)('workspace data layer on the real project', () => {
       return user;
     };
     users = { owner: pick('a'), member: pick('b'), outsider: pick('c') };
-    [owner, member, outsider] = await Promise.all([signedIn(users.owner), signedIn(users.member), signedIn(users.outsider)]);
+    // Each successful client remains available for sign-out if a later fixture sign-in fails.
+    owner = await signedIn(users.owner);
+    member = await signedIn(users.member);
+    outsider = await signedIn(users.outsider);
     workspaceId = await api.createWorkspace(owner, `SP Live ${users.owner.email.split('@')[0]}`);
     const invitation = await api.createInvitation(owner, workspaceId, users.member.email, 'member');
     expect(await api.acceptInvitation(member, invitation.token)).toBe(workspaceId);
   });
 
   afterAll(async () => {
-    if (workspaceId) await owner.from('workspaces').delete().eq('id', workspaceId);
+    // The provisioning operator removes this workspace and the disposable users. Clients have
+    // no workspace DELETE grant; an unchecked delete here previously left a misleading cleanup.
     await Promise.all([owner, member, outsider].filter(Boolean).map((c) => c.auth.signOut({ scope: 'local' })));
   });
 

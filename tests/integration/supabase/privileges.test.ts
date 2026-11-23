@@ -16,24 +16,28 @@ const db = useDatabase();
 type ColumnPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'REFERENCES';
 type TablePrivilege = ColumnPrivilege | 'DELETE' | 'TRUNCATE' | 'TRIGGER';
 
-const TABLES = [
+const TABLES = ([
   'notes',
+  'notification_preferences',
+  'notifications',
   'profiles',
   'projects',
   'task_comments',
   'task_subtasks',
   'tasks',
   'time_entries',
+  'workspace_automation_settings',
   'workspace_invitations',
   'workspace_members',
   'workspaces',
-] as const;
+] as const).toSorted();
 type Table = (typeof TABLES)[number];
 
 const ALL = '*';
 
 /** Table-level privileges of `authenticated` (anon has none anywhere). */
 const TABLE_GRANTS: Record<Table, TablePrivilege[]> = {
+  notification_preferences: ['SELECT'], notifications: ['SELECT'], workspace_automation_settings: ['SELECT'],
   notes: ['DELETE', 'SELECT'],
   profiles: ['SELECT'],
   projects: ['DELETE', 'SELECT'],
@@ -48,6 +52,9 @@ const TABLE_GRANTS: Record<Table, TablePrivilege[]> = {
 
 /** Effective column privileges of `authenticated` (table- or column-level). */
 const COLUMN_GRANTS: Record<Table, Partial<Record<ColumnPrivilege, typeof ALL | string[]>>> = {
+  notification_preferences: { SELECT: ALL, INSERT: ['workspace_id','user_id','config'], UPDATE: ['config'] },
+  notifications: { SELECT: ALL, UPDATE: ['read_at'] },
+  workspace_automation_settings: { SELECT: ALL, INSERT: ['workspace_id','enabled','events_enabled','reminders_enabled','digests_enabled'], UPDATE: ['enabled','events_enabled','reminders_enabled','digests_enabled'] },
   notes: {
     SELECT: ALL,
     INSERT: ['body', 'id', 'owner_id', 'pinned', 'project_id', 'title', 'visibility', 'workspace_id'],
@@ -142,6 +149,7 @@ const COLUMN_GRANTS: Record<Table, Partial<Record<ColumnPrivilege, typeof ALL | 
 
 /** Policy commands per table (all `to authenticated`). */
 const POLICY_COMMANDS: Record<Table, string[]> = {
+  notification_preferences: ['INSERT','SELECT','UPDATE'], notifications: ['SELECT','UPDATE'], workspace_automation_settings: ['INSERT','SELECT','UPDATE'],
   notes: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   profiles: ['SELECT', 'UPDATE'],
   projects: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
@@ -156,7 +164,9 @@ const POLICY_COMMANDS: Record<Table, string[]> = {
 
 /** Functions in `public` that `authenticated` may execute: exactly the RPCs. */
 const AUTHENTICATED_FUNCTIONS = [
+  'automation_outcomes',
   'accept_invitation',
+  'analytics_time_summary',
   'create_invitation',
   'create_workspace',
   'my_workspaces',
@@ -180,6 +190,8 @@ const PRIVATE_FUNCTIONS = [
   'shares_workspace_with',
 ].sort();
 
+const WORKER_FUNCTIONS = ['authorize_automation_worker','claim_automation_jobs','finish_automation_job','fail_automation_job','plan_automation_jobs'].sort();
+const INTERNAL_FUNCTIONS = ['automation_defaults','automation_config','validate_automation_preferences','automation_delivery_at','enqueue_automation','task_automation_events','automation_membership_schedule','plan_automation','automation_comment_activity','automation_settings_changed'].sort();
 const TRIGGER_FUNCTIONS = [
   'bump_version',
   'handle_new_user',
@@ -202,6 +214,7 @@ const TRIGGER_FUNCTIONS = [
 
 /** SECURITY DEFINER exactly where the migrations intend it (sync_time_entries is INVOKER). */
 const SECURITY_DEFINER_FUNCTIONS = [
+  'authorize_automation_worker','automation_outcomes','claim_automation_jobs','finish_automation_job','fail_automation_job','plan_automation_jobs',
   'accept_invitation',
   'create_invitation',
   'create_workspace',
@@ -429,7 +442,7 @@ describe('functions', () => {
     expect(list.filter((fn) => fn.authenticated).map((fn) => fn.name).sort()).toEqual(AUTHENTICATED_FUNCTIONS);
     expect(list.filter((fn) => fn.is_trigger).map((fn) => fn.name).sort()).toEqual(TRIGGER_FUNCTIONS);
     // Every function is accounted for.
-    expect(list.map((fn) => fn.name).sort()).toEqual([...AUTHENTICATED_FUNCTIONS, ...TRIGGER_FUNCTIONS].sort());
+    expect(list.map((fn) => fn.name).sort()).toEqual([...AUTHENTICATED_FUNCTIONS, ...TRIGGER_FUNCTIONS, ...WORKER_FUNCTIONS].sort());
   });
 
   it('SECURITY DEFINER exactly where intended, owned by the non-superuser migration owner', async () => {
@@ -449,8 +462,12 @@ describe('functions', () => {
 
   it('the RLS helpers live in private: authenticated executes exactly them, anon and PUBLIC none', async () => {
     const list = await functions('private');
-    expect(list.map((fn) => fn.name).sort()).toEqual(PRIVATE_FUNCTIONS);
-    for (const fn of list) {
+    expect(list.map((fn) => fn.name).sort()).toEqual([...PRIVATE_FUNCTIONS,...INTERNAL_FUNCTIONS].sort());
+    for (const fn of list.filter(fn=>INTERNAL_FUNCTIONS.includes(fn.name))) {
+      expect(fn.authenticated,fn.name).toBe(false); expect(fn.anon,fn.name).toBe(false); expect(fn.nobody,fn.name).toBe(false);
+      expect(fn.config??[],fn.name).toContain('search_path=""');
+    }
+    for (const fn of list.filter(fn=>PRIVATE_FUNCTIONS.includes(fn.name))) {
       expect(fn.authenticated, fn.name).toBe(true);
       expect(fn.anon, fn.name).toBe(false);
       expect(fn.nobody, fn.name).toBe(false);
@@ -459,9 +476,11 @@ describe('functions', () => {
       expect(fn.owner, fn.name).toBe(MIGRATION_OWNER);
     }
     const objects = await db().admin<{ name: string }>(
-      `select relname as name from pg_class where relnamespace = 'private'::regnamespace`,
+      `select relname as name from pg_class where relnamespace = 'private'::regnamespace and relkind in ('r','p') order by relname`,
     );
-    expect(objects).toEqual([]);
+    expect(objects).toEqual(['automation_attempts','automation_jobs','automation_schedules','automation_worker_keys','task_automation_state'].map(name=>({name})));
+    const exposed=await db().admin(`select relname from pg_class where relnamespace='private'::regnamespace and relkind='r' and (not relrowsecurity or has_table_privilege('authenticated',oid,'SELECT') or has_table_privilege('anon',oid,'SELECT'))`);
+    expect(exposed).toEqual([]);
   });
 
   it('the RLS helpers are not callable under public (no /rest/v1/rpc endpoint)', async () => {
