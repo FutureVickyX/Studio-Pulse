@@ -86,8 +86,22 @@ supabase functions deploy automation-worker --project-ref rbvuqdyktfiaxcunioyv -
 The build emits `supabase/functions/automation-worker/index.ts` from `server/automation` and
 the existing Phase 3A modules. It bundles dependencies, embeds no configuration values, and
 fails on unresolved imports. The generated file is ignored and must be built before deploying.
-`supabase/config.toml` also records the handler's authentication mode. The connector can deploy
-this same generated file with `verify_jwt: false`.
+`supabase/config.toml` also records the handler's authentication mode.
+
+Without the CLI, deploy through the Supabase connector, which takes the source inline. Build the
+connector variant instead:
+
+```powershell
+npm run build:automation -- --connector
+npm run check:secrets -- supabase/functions/automation-worker
+```
+
+It writes the same ignored file, unminified, with only this repository's code (about 58 KB instead of
+about 330 KB). `@supabase/supabase-js` and `zod`, including any subpath, stay as `npm:` imports pinned
+to the exact installed versions, which the Edge runtime resolves at deploy time. The build fails if the
+output imports anything else. Deploy it as `automation-worker` with entrypoint `index.ts` and `verify_jwt: false`. Then read
+the function back and compare it byte for byte with the local file, and check the next cron response
+(below). Rebuild without `--connector` before a CLI deploy.
 
 In the project's trusted SQL editor, set only the public project URL in Vault (once):
 

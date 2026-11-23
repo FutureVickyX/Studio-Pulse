@@ -127,6 +127,14 @@ policy or grant changes, and revokes are re-issued.
 - The worker bundle banner no longer depends on rolldown's `banner` option.
 - `check:secrets` has a narrow, tested allowlist entry for the worker bundle. Its two hits are
   supabase-js's key-format check and the runtime *name* `SUPABASE_SERVICE_ROLE_KEY`; no values.
+- `build:automation -- --connector` builds a readable worker for the Supabase connector. Only this
+  repository's code is bundled. supabase-js and zod, including any subpath, are pinned as `npm:`
+  imports through rolldown's `paths`, which covers named, side-effect, re-export and dynamic imports.
+  The output is checked in memory and written once. The build fails on any unpinned import or on more
+  than one output file. The default build is unchanged, byte for byte.
+- Live automation test: the burst polls for up to 150 s (was 110 s), with a 170 s test timeout. Setup
+  re-saves the workspace settings after creating the first task, so a planning pass that ran in between
+  can't delay `due_today` by 15 minutes (§5.2).
 - New tests:
   - `tests/integration/supabase/automation-hardening.test.ts`: 11 tests, all of which fail without
     migration 14 (checked by moving the migration out).
@@ -338,15 +346,53 @@ is broken on this machine; see §5.4.**
 | Rust lint and format | `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` | Passed |
 | Hosted scheduler health (read-only SQL, 20 November) | `cron.job_run_details`, `net._http_response` | 1,440 runs in 24 h, 0 failed; 360 worker responses in 6 h, all HTTP 200; 13 migrations applied; 0 users, workspaces, jobs or notifications |
 
+**Hosted deployment and verification, `studio-pulse-dev`, 22–23 November 2026 (times UTC):**
+
+| Check | How | Result |
+|---|---|---|
+| Migration 14 | Applied through the Supabase connector with the file's exact content; version re-recorded as `20261119090000` | 14 migrations applied. The stored migration text is byte-identical to the committed file. Function fingerprints (`name(args)\|md5(source without CRs)\|security definer`) for all 49 `public`/`private` functions, freshly taken from hosted and from a fresh PGlite build, hash to the same digest (`a064b6a7…`). Without stripping CRs, 39 match byte for byte (see the line-ending note). Advisors unchanged |
+| Worker v2 | `node scripts/build-automation-worker.mjs --connector`, deployed through the connector, then read back | Deployed source byte-identical to the local build (sha256 `5f485780…37bfede3`, 58 KB). The committed script reproduces it byte for byte; its default build is unchanged (`411f33aa…`, 331 KB). `check:secrets` on that build passed: one allowlisted service-role mention. `verify_jwt` false |
+| First scheduled run on v2 | `cron.job_run_details`, `net._http_response`, function logs | 20:36: cron succeeded, HTTP 200 `{"completed":0,"skipped":0,"deferred":0,"failed":0}`, served by deployment version 2 (boot 85 ms; v1 took 259 ms), `automation_run` logged `planning: ok` |
+| Live automation suite, run 1 | `tests/live/automation.live.test.ts`, three throwaway confirmed users provisioned by SQL (argon2id hashes made locally) | **5 of 5 passed** (157 s), scheduled runs only. The burst test passed by less than a second; see the timing note below |
+| Live automation suite, run 2 | Same suite with the burst bound widened to 150 s; the operator queued two concurrent trusted invocations (the scheduler's own Vault-based call) once the burst existed | **5 of 5 passed** (33 s). The two invocations returned HTTP 200, completing 10 and 2 jobs with 0 failed |
+| Scheduler health, deploy to 23 November 10:55 | Independent read-only re-check: `cron.job_run_details`, `net._http_response`, function logs | Job active (`* * * * *`). 859 of 859 runs succeeded. Function logs: 861 scheduler calls answered HTTP 200 by version 2, and 862 `automation_run` lines (860 scheduled plus the 2 operator calls), all with `failed` 0 and `planning: ok`. No error or warning lines. The only other responses were the two intended 401s for a user JWT. pg_net keeps response rows for only about 6 h, so the 360 rows still stored were checked directly (all 200, `failed` 0) and earlier ones come from the logs |
+| Live automation suite, run 3 (23 November) | The final test file (150 s burst bound, setup re-save) with three new throwaway users. Scheduled runs only, no operator invocations | **5 of 5 passed** (161 s). The burst's last notice came 112.3 s after its last task. Under the old 110 s bound this run would have failed. Worker runs completed 4, 10 and 2 jobs, all HTTP 200 with `failed` 0 |
+| Delivery records, all three runs | SQL over jobs and notices before each cleanup | Each run: 16 jobs, all completed on the first attempt with no error; 16 notices (13 assigned, 1 due today, 1 daily, 1 weekly), one recipient, no duplicates |
+| Security advisor after the runs | `get_advisors` | Unchanged: lint 0029 for the nine intended RPCs, and lint 0008 (INFO) for the five policy-free `private` tables |
+| Cleanup | SQL, after runs 2 and 3 | All three workspaces and all six throwaway users deleted. Every `public` and `private` table, plus `auth.users`, `identities`, `sessions`, `refresh_tokens` and `one_time_tokens`, is back to 0 rows; only the scheduler's key hash remains. The local credential files were deleted after each cleanup |
+
+- **Line endings on hosted.** Ten functions applied in Phase 3B differ from the repository by raw
+  `md5(prosrc)` only because they were applied with CRLF line endings and PostgreSQL keeps the CRs in
+  the function source. With CRs removed they match. This is harmless and needs no action.
+- **Stored migration text.** For five older migrations, the text stored on hosted differs from the
+  repository files without any schema effect:
+  - `20261024090000` has one comment line that was edited in the repository after it was applied;
+  - four Phase 3A/3B migrations differ only by a trailing newline.
+
+  A byte-exact migration comparison reports these five as different.
+- **Burst timing.** The worker claims ten jobs a run, so without operator invocations the twelve-task
+  burst needs two scheduled batches.
+  - The first test (scheduled delivery) ends just after a cron minute, and tests 2–4 take about 6–7 s.
+    So the burst lands about 9–10 s into a minute.
+  - Its last notice then arrives one minute boundary plus a full minute later, about 110 s after the
+    polling bound starts. The bound starts once all twelve tasks exist.
+  - Run 1 passed with well under a second to spare: 110.24 s after the first burst task, against
+    the 110 s bound. Run 3 needed 112.3 s.
+  - The bound is now 150 s, with a 170 s test timeout (`tests/live/automation.live.test.ts`,
+    `tests/live/README.md`).
+  - Phase 3B's recorded run had queued the two invocations (handoff-phase-3b.md).
+- **First-test setup race (fixed in the test, not observed).** A task insert does not reschedule
+  planning. If a planning pass ran between enabling automation and creating the first task, it set
+  the next scan 15 minutes ahead, and `due_today` would miss the 110 s bound. The window is one
+  request in each minute. Setup now saves the workspace settings again after creating the task, which
+  resets the scan.
+
 **Not executed here (manual or environment-bound):**
 
 - Signed-in browser checks of the changed web UI at 1280 px and 390 px: bell and badge, digest dialog,
-  outcomes table, field errors, "Load older". They need a real sign-in, and the hosted database does
-  not have migration 14 yet.
-- Hosted live suites (`tests/live/*.live.test.ts`), including the corrected workspace-suite cleanup.
-  They need the hosted project's service credentials in a local env file.
-- Hosted verification after migration 14: `supabase/automation/verify-scheduler.sql`, HTTP 200 with
-  `"failed":0`, and the live automation test.
+  outcomes table, field errors, "Load older". They need a real sign-in and the new web build.
+- The hosted workspace live suite (`tests/live/workspace.live.test.ts`), including the corrected
+  workspace-suite cleanup. Only the automation suite was run against hosted.
 - Tauri release and NSIS installer build. The Rust tree and desktop code are unchanged since 3B, which
   recorded it.
 - The 9 interactive-desktop Rust tests and the Windows manual checklist (docs/windows.md); the desktop
@@ -373,12 +419,16 @@ In order:
 2. **Database.** Apply `20261119090000_automation_hardening.sql` to the hosted project (`supabase db push`
    or the dashboard). It only replaces functions and repairs data, so it is safe on the current empty
    data set. Then run `supabase/automation/verify-scheduler.sql` and check advisors.
+   **Done on `studio-pulse-dev`, 22 November.** Verified with the same queries: job active, run
+   history, HTTP responses and job states (§5.2).
 3. **Worker.**
    1. Run `npm run build:automation`.
    2. Run `npm run check:secrets -- supabase/functions/automation-worker`.
    3. Run `supabase functions deploy automation-worker --project-ref <ref> --no-verify-jwt`
-      (docs/automation.md).
+      (docs/automation.md). Without the CLI, use the connector build and deploy described there.
    4. Confirm the next cron responses are HTTP 200 with `"failed":0`.
+
+   **Done on `studio-pulse-dev`, 22 November: version 2, through the connector (§5.2).**
 4. **Web.** Build with the production public configuration, then run `npm run check:secrets:web` and
    deploy `apps/web/dist`.
 5. **Desktop.** No new release is required by Phase 3.
@@ -391,9 +441,10 @@ In order:
 
 ### 5.5 Production readiness
 
-- **Today, hosted:** the critical cross-tenant halt (db-authz#0) and the rule-save failure (web-ui#0)
-  are live on hosted until steps 2–4 are deployed. There are no users or data yet, so nothing has been
-  exposed.
+- **Today, hosted:** migration 14 and worker v2 are live on `studio-pulse-dev` (22 November). That fixes
+  the critical cross-tenant halt (db-authz#0) there, and the live automation suite passes against it.
+  The rule-save failure (web-ui#0) is a web-client fix, so it stays until the web app is deployed
+  (step 4, after merging). The project is back to no users or data, so nothing has been exposed.
 - **After steps 1–4 and the manual signed-in checks:** ready for a **controlled pilot** with known
   users. All high and critical findings are fixed and tested, the scheduler has run cleanly, and the
   automated suites pass.

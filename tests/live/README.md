@@ -28,7 +28,9 @@ verified scheduler. Four checks cover scheduled assignment/deadline/digest deliv
 privacy/read state, digest equality with the authenticated Phase 3A RPC, and rejected privileged
 operations. A fifth creates twelve tasks to test idempotent burst delivery. Its optional
 concurrent-worker verification uses two trusted operator invocations; tests never receive the
-worker or service-role credential. Polling is bounded to 110 seconds, not an unlimited wait.
+worker or service-role credential. Polling is bounded, not an unlimited wait: 110 seconds for the
+scheduled deliveries, and 150 seconds for the burst (test timeout 170 seconds). Without operator
+invocations, its twelve jobs need two scheduled batches of ten, a minute apart.
 
 The automation suite records exact workspace IDs in `automationWorkspace`/`automationWorkspaces`
 in the supplied ignored fixture file for operator cleanup. Stop test sessions, delete those

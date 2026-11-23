@@ -58,6 +58,10 @@ describe.skipIf(!configured)('automation on the real development project',()=>{
    const created=await api.createTask(owner,{workspace_id:workspace,title:'Review the studio identity',description:'Live automation verification',
      project_id:null,status:'todo',priority:'normal',assignee_id:memberId,due_date:today},users.find(u=>u.label==='a')!.id);
    taskId=created.id;
+   // A planning pass between enabling automation and creating the task would plan without it and
+   // then wait 15 minutes, past the 110 s bound below. Saving the settings again (same values)
+   // reschedules the scan now that the task exists.
+   await automation.saveWorkspaceAutomation(owner,workspace,{enabled:true,events_enabled:true,reminders_enabled:true,digests_enabled:true});
  });
  afterAll(async()=>{
    await Promise.all([owner,member,outsider].filter(Boolean).map(client=>client.auth.signOut({scope:'local'})));
@@ -122,7 +126,10 @@ describe.skipIf(!configured)('automation on the real development project',()=>{
    const fixture=JSON.parse(readFileSync(usersFile,'utf8')) as object;
    writeFileSync(usersFile,JSON.stringify({...fixture,concurrentTaskIds:ids}),{mode:0o600});
    console.log('Concurrent worker fixture ready; the operator may queue two trusted invocations.');
-   const end=Date.now()+110000;
+   // Without operator invocations, twelve jobs need two scheduled batches of ten (one a minute), so
+   // the last notice can arrive up to about 121 s after the burst, depending on when in the minute
+   // the burst lands. 110 s passed only when the burst landed late enough in the minute.
+   const end=Date.now()+150000;
    let received:{id:string;task_id:string|null}[]=[];
    while(Date.now()<end){
      const result=await member.from('notifications').select('id,task_id').eq('workspace_id',workspace).eq('kind','assigned').in('task_id',ids);
@@ -133,5 +140,5 @@ describe.skipIf(!configured)('automation on the real development project',()=>{
    expect(received).toHaveLength(12);
    expect(new Set(received.map(row=>row.task_id)).size).toBe(12);
    expect(new Set(received.map(row=>row.id)).size).toBe(12);
- },120000);
+ },170000);
 });
