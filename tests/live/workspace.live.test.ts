@@ -6,8 +6,9 @@
  * Environment (tests/live/README.md):
  *   SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY   public values
  *   SP_LIVE_USERS_FILE                       JSON {users:[{label:'a'|'b'|'c', email, password, id}]}
- * The provisioning operator deletes disposable workspaces and users after the run. Clients
- * intentionally have no workspace DELETE grant.
+ * The suite deletes its own workspace through the owner's session (RLS workspaces_delete lets an
+ * owner delete a workspace, cascading all of its data); the provisioning operator deletes only the
+ * disposable users afterwards.
  */
 
 import { readFileSync } from 'node:fs';
@@ -77,9 +78,17 @@ describe.skipIf(!configured)('workspace data layer on the real project', () => {
   });
 
   afterAll(async () => {
-    // The provisioning operator removes this workspace and the disposable users. Clients have
-    // no workspace DELETE grant; an unchecked delete here previously left a misleading cleanup.
-    await Promise.all([owner, member, outsider].filter(Boolean).map((c) => c.auth.signOut({ scope: 'local' })));
+    // Owners may delete their workspace (RLS workspaces_delete, cascading its data). The delete is
+    // checked, and sign-out runs even if it fails; the operator then deletes the disposable users.
+    try {
+      if (owner && workspaceId) {
+        const { error, count } = await owner.from('workspaces').delete({ count: 'exact' }).eq('id', workspaceId);
+        expect(error).toBeNull();
+        expect(count).toBe(1);
+      }
+    } finally {
+      await Promise.all([owner, member, outsider].filter(Boolean).map((c) => c.auth.signOut({ scope: 'local' })));
+    }
   });
 
   it('lists the workspace and its members for members only', async () => {
@@ -232,40 +241,52 @@ describe.skipIf(!configured)('workspace data layer on the real project', () => {
 
   it('realtime: teammates get workspace changes, never someone’s private note', async () => {
     const seen: string[] = [];
+    // Without `wait`, SUBSCRIBED only means the channel joined. The server registers the
+    // postgres_changes subscription afterwards, and on a cold Realtime tenant it retries 1–3 s
+    // later; changes it reads from the replication slot before then are never delivered. With
+    // `wait`, SUBSCRIBED comes once the subscription exists (docs/handoff-phase-3c.md §5.2,
+    // Realtime note).
     const channel = owner
-      .channel(`live-test:${workspaceId}`)
+      .channel(`live-test:${workspaceId}`, { config: { postgres_changes_options: { wait: true } } })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${workspaceId}` }, (p) =>
         seen.push(`task:${(p.new as { title: string }).title}`),
       )
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notes', filter: `workspace_id=eq.${workspaceId}` }, (p) =>
         seen.push(`note:${(p.new as { title: string }).title}`),
       );
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('realtime did not subscribe')), 20_000);
-      channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          clearTimeout(timer);
-          resolve();
-        }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        // The server holds a waiting join for 15 s by default (20 s at most) and rejects it after a
+        // back-off of about 5 s; the client times the join out at 25 s. The backstop covers the rest.
+        const timer = setTimeout(() => reject(new Error('realtime did not subscribe')), 30_000);
+        channel.subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            clearTimeout(timer);
+            resolve();
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            clearTimeout(timer);
+            reject(new Error(`realtime ${status}${err ? `: ${err.message}` : ''}`));
+          }
+        });
       });
-    });
-    // Let the subscription settle before writing.
-    await new Promise((r) => setTimeout(r, 1500));
-    await api.createNote(member, { workspace_id: workspaceId, title: 'RT private', body: '', visibility: 'private', project_id: null }, users.member.id);
-    await api.createNote(member, { workspace_id: workspaceId, title: 'RT shared', body: '', visibility: 'workspace', project_id: null }, users.member.id);
-    await api.createTask(
-      member,
-      { workspace_id: workspaceId, title: 'RT task', description: '', status: 'inbox', priority: 'normal', assignee_id: null, project_id: null, due_date: null },
-      users.member.id,
-    );
-    const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline && !(seen.includes('task:RT task') && seen.includes('note:RT shared'))) {
-      await new Promise((r) => setTimeout(r, 250));
+      await api.createNote(member, { workspace_id: workspaceId, title: 'RT private', body: '', visibility: 'private', project_id: null }, users.member.id);
+      await api.createNote(member, { workspace_id: workspaceId, title: 'RT shared', body: '', visibility: 'workspace', project_id: null }, users.member.id);
+      await api.createTask(
+        member,
+        { workspace_id: workspaceId, title: 'RT task', description: '', status: 'inbox', priority: 'normal', assignee_id: null, project_id: null, due_date: null },
+        users.member.id,
+      );
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline && !(seen.includes('task:RT task') && seen.includes('note:RT shared'))) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      await new Promise((r) => setTimeout(r, 1500)); // time for a stray private event to show up
+    } finally {
+      // Also on failure: otherwise Phoenix keeps rejoining the errored channel in the background.
+      await owner.removeChannel(channel);
     }
-    await new Promise((r) => setTimeout(r, 1500)); // time for a stray private event to show up
-    await owner.removeChannel(channel);
     expect(seen).toContain('task:RT task');
     expect(seen).toContain('note:RT shared');
     expect(seen).not.toContain('note:RT private');
-  });
+  }, 90_000);
 });

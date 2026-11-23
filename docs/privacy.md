@@ -114,11 +114,23 @@ server. They follow the same rules as every other read of time entries, enforced
 
 Notifications are addressed to one person and require their active workspace membership to read.
 Workspace administrators cannot browse another person's notification inbox. Personal preferences
-are stored per workspace; administrator outcome logs omit recipients and private payloads.
+are stored per workspace. The administrator outcome report omits recipients, titles and private
+payloads; since migration 14 it also folds preference skips into "completed" and quiet-hours
+deferrals into "pending", returns no next-eligible or completion time, and dates jobs by day only,
+so it does not reveal a member's opt-outs or quiet hours. Rows can still be matched to events an administrator caused (for example
+an assignment they made that day), and daily/weekly rows show that someone in the workspace opted
+in to summaries.
+
+A delivered notice keeps the task title and project name as they were at delivery, even after the
+task or project is renamed or deleted. Only you can read it while you are an active member; it is
+removed with the workspace or your account. Neither you nor an administrator can delete a single
+notice from the app yet, and notices, job records and scheduler run logs have no automatic
+retention limit: pruning is an operator task (see [automation.md](automation.md)).
 
 Opt-in daily/weekly summaries read only your own assigned tasks and recorded time in that
 workspace. They use Analytics' reconciliation rules and label application measurements separately
-from manual or billable time. Private notes are never included. Received summaries are snapshots;
+from manual or billable time. The completed-task figure counts your tasks that are still done and
+still assigned to you when the summary is generated. Private notes are never included. Received summaries are snapshots;
 late offline uploads appear in later reports. In-app delivery is the only supported channel.
 See [automation.md](automation.md) for scheduling, quiet hours and data retention.
 

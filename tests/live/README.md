@@ -3,8 +3,10 @@
 Not part of `npm test`: they need the network, a project with every migration applied, and three
 confirmed throwaway users. They run the web workspace's data layer
 (`apps/web/src/lib/api.ts`) exactly as the UI does, through the publishable key and each user's own
-session. The provisioning operator deletes test workspaces and users afterwards; authenticated
-clients intentionally have no workspace DELETE permission.
+session. The workspace suite deletes its own workspace through the owner's session (owners may
+delete a workspace; the delete cascades to all of its data). The automation suite keeps its
+workspace for inspection and records its exact IDs; the provisioning operator deletes that
+workspace and all the disposable users afterwards.
 
 ```bash
 SUPABASE_URL=https://<ref>.supabase.co \
@@ -21,12 +23,20 @@ the secret key (`scripts/supabase/verify.mjs` does) or with SQL, as described in
 
 Without the three variables the suite is skipped.
 
+The workspace suite's Realtime test subscribes with `postgres_changes_options: { wait: true }`.
+Without it, `SUBSCRIBED` can arrive before the server's postgres_changes subscription exists. Realtime
+stops after about 10 idle minutes. On a cold tenant the server then confirmed the subscription 1–3 s
+or more after `SUBSCRIBED`: 1.96 s in one probe, over 2.1 s in a failed run. In that run, no write
+made in the gap was delivered (docs/handoff-phase-3c.md §5.2).
+
 `automation.live.test.ts` additionally requires the deployed Phase 3B worker and an active
 verified scheduler. Four checks cover scheduled assignment/deadline/digest delivery, recipient
 privacy/read state, digest equality with the authenticated Phase 3A RPC, and rejected privileged
 operations. A fifth creates twelve tasks to test idempotent burst delivery. Its optional
 concurrent-worker verification uses two trusted operator invocations; tests never receive the
-worker or service-role credential. Polling is bounded to 110 seconds, not an unlimited wait.
+worker or service-role credential. Polling is bounded, not an unlimited wait: 110 seconds for the
+scheduled deliveries, and 150 seconds for the burst (test timeout 170 seconds). Without operator
+invocations, its twelve jobs need two scheduled batches of ten, a minute apart.
 
 The automation suite records exact workspace IDs in `automationWorkspace`/`automationWorkspaces`
 in the supplied ignored fixture file for operator cleanup. Stop test sessions, delete those

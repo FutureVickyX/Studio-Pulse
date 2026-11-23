@@ -239,6 +239,13 @@
     background: var(--web-sidebar-bg);
   }
 
+  .web-topbar__notices {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+  }
+
   .web-topbar__title {
     min-width: 0;
     color: var(--sp-text);
@@ -1988,7 +1995,4 @@ button.web-row:hover .web-row__title {
 .web-digest-facts { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 16px; margin-block: 16px; }
 .web-digest-facts dt { color: var(--sp-text-muted); font-size: var(--sp-text-sm); }
 .web-digest-facts dd { font-size: var(--sp-text-xl); margin: 4px 0; font-variant-numeric: tabular-nums; }
-.web-automation-table { overflow-x: auto; }
-.web-automation-table table { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
-.web-automation-table th, .web-automation-table td { padding: 8px; border-bottom: var(--sp-hairline) solid var(--sp-border); }
 @media(max-width:600px) { .web-automation-fields { grid-template-columns: minmax(0,1fr); } }

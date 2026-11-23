@@ -1,8 +1,10 @@
-# Studio Pulse — Team workspace (Phases 2B and 3A)
+# Studio Pulse — Team workspace (Phases 2B, 3A and 3B)
 
 The team workspace (`apps/web`) is where a studio plans and shares work: projects, tasks with
 checklists and comments, personal and shared notes, attribution of synced desktop time to
-projects and tasks, and (Phase 3A) analytics of that time (§8). It is a static React app with no server of its own. It talks to the same
+projects and tasks, and (Phase 3A) analytics of that time (§8), plus (Phase 3B) in-app notifications and personal
+automation settings ([automation.md](automation.md)). It is a static React app with no server of its own;
+scheduled notifications are delivered by a separate server worker, never by the browser. It talks to the same
 Supabase project as the desktop app, with the publishable key and the signed-in user's session,
 so Row Level Security decides every read and write.
 
@@ -22,6 +24,8 @@ the desktop build links to a workspace (§3.3).
 | **Notes** | Personal (private) and shared notes, filtered by scope, project and archived; search by title and text. The editor autosaves (§5.2). Owners share or unshare, move to a project, pin, archive and delete. |
 | **Time** | Your synced desktop sessions for Today, Yesterday, 7 days or 30 days, with active and foreground totals overall and by project; filter by application to see one application's totals. Select sessions and attribute them to a project and optionally a task, or clear the attribution. Days here group sessions by the day they started; Analytics splits sessions at midnight and counts overlapping time once, so totals can differ slightly. |
 | **Analytics** (`#/analytics`) | Recorded time and task progress for a range, for your own work or the workspace (§8). |
+| **Notifications** (`#/notifications`) | Your private in-app notices for this workspace: task events, reminders and opted-in daily/weekly summaries (a summary opens in a dialog). Mark read or unread, mark all read, load older notices. The sidebar entry, and at 760 px and below a bell in the top bar, show the unread count. |
+| **Automation** (`#/automation`) | Your personal notification preferences: rules, time zone, reminder timing, quiet hours and summary schedule. Owners and admins also switch workspace rules and see recent job outcomes without recipients or private timing. See [automation.md](automation.md). |
 
 The layout is a sidebar on desktop widths and a top bar with a slide-over menu at 760 px and below. It has one colour
 palette (no light or dark switch) and uses `@studio-pulse/ui`, the same tokens and
@@ -105,7 +109,9 @@ link to a workspace. Debug builds also read the variable at runtime.
   RLS-check DELETE events, so every signed-in subscriber to these tables receives the id (only
   the id: no title, text or workspace) of every deleted row in the project, with its timing. The
   page refetches only for deleted rows it holds. Events only trigger a refetch, which is again
-  subject to RLS.
+  subject to RLS. Known gap: a teammate's change made while the page is opening may not appear until
+  the next refresh trigger (§6). The window is longer, a few seconds, when Realtime has been idle
+  for about 10 minutes (docs/handoff-phase-3c.md, H7).
 
 Who may do what, enforced in the database (`supabase/migrations`, tests in
 `tests/integration/supabase`):
@@ -317,7 +323,8 @@ Use two accounts in two browsers, or one normal and one private window:
 1. **A** signs in, creates a workspace and invites **B** from the desktop app (Settings ›
    Workspace). **B** signs in on the web and joins with the code.
 2. **A** creates a project with **B** as lead, and a task assigned to **B** with a due date in
-   three days. **B** sees it under *My tasks* and on the Overview, without reloading.
+   three days. **B** sees it under *My tasks* and on the Overview, without reloading. (If **B** has
+   only just opened the page after Realtime was idle, wait a few seconds before **A** acts; see §4.)
 3. **B** adds checklist items and a comment. **A** sees them appear in the open task panel.
 4. Both open the same task and change its title. The second save says someone else saved first and
    shows their version.
@@ -333,7 +340,8 @@ Use two accounts in two browsers, or one normal and one private window:
 8. Try to delete the project: it is refused while work is attached. Archive it instead, check it
    no longer offers itself for new time, then restore it.
 9. Narrow the window to 760 px or less: navigation moves into the menu and every page stays
-   usable.
+   usable. With an unread notification, the top bar shows a bell with the unread count, and it
+   opens Notifications.
 10. Open **Analytics** as **B** (a member): *My work* shows only **B**'s time, and *Workspace*
     shows task progress with no time. Set the workspace's time-entry visibility to `admins` (no
     screen changes it yet: the owner calls `set_time_entry_visibility`, [supabase.md

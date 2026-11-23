@@ -146,15 +146,16 @@ run the installer, sign out/in or reboot with launch at login enabled, and check
 | Path | What |
 | --- | --- |
 | `apps/desktop` | Tauri 2 app: React UI (`src/`) and Rust core (`src-tauri/`) |
-| `apps/web` | Team workspace (Phases 2B and 3A): React + Vite static app on Supabase — see [docs/workspace.md](docs/workspace.md) |
+| `apps/web` | Team workspace (Phases 2B, 3A and 3B): React + Vite static app on Supabase, including Analytics, Notifications and Automation settings — see [docs/workspace.md](docs/workspace.md) |
 | `packages/shared-types` | Rust⇄UI contract types + built-in application registry JSON |
 | `packages/validation` | zod schemas for settings, applications and inputs |
 | `packages/time-engine` | Reporting maths: ranges, time zones, day splitting, aggregation, and the analytics reconciliation (`reconcileIntervals`, `summarizeReport`) |
 | `packages/ui` | Design tokens, React primitives, SVG charts |
 | `packages/database` | Typed Supabase client factory, `Database` types matching the migrations, publishable-key-only config validation |
-| `supabase/` | Ten ordered Postgres migrations with RLS and RPCs (Phases 2A, 2B and 3A) — see [docs/supabase.md](docs/supabase.md) |
+| `server/automation` | Scheduled automation worker (Phase 3B), bundled by `npm run build:automation` into the gitignored `supabase/functions/automation-worker/index.ts` — see [docs/automation.md](docs/automation.md) |
+| `supabase/` | Fourteen ordered Postgres migrations with RLS and RPCs (Phases 2A–3C), the scheduler installer and checks (`supabase/automation/`) and the Edge function config — see [docs/supabase.md](docs/supabase.md) |
 | `tests/` | TS unit and integration tests, live tests against a real project (`tests/live`), and shared tracking scenario fixtures |
-| `docs/` | [Architecture](docs/architecture.md), [installation](docs/installation.md), [privacy](docs/privacy.md), [Supabase](docs/supabase.md), [workspace](docs/workspace.md), [testing](docs/testing.md) |
+| `docs/` | [Architecture](docs/architecture.md), [installation](docs/installation.md), [privacy](docs/privacy.md), [Supabase](docs/supabase.md), [workspace](docs/workspace.md), [automation](docs/automation.md), [testing](docs/testing.md) |
 
 ## Documentation
 

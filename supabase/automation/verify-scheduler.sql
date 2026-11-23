@@ -2,7 +2,9 @@
 select jobname,schedule,active from cron.job where jobname='studio-pulse-automation';
 select r.status,r.start_time,r.end_time,r.return_message from cron.job_run_details r
 join cron.job j using(jobid) where j.jobname='studio-pulse-automation' order by r.start_time desc limit 10;
-select status_code,timed_out,error_msg,created from net._http_response order by created desc limit 10;
+-- content is the worker's counts JSON only ({completed,skipped,deferred,failed}, plus error:'planning_failed'
+-- with status 503 when planning failed); it never contains ids, titles or credentials.
+select status_code,timed_out,error_msg,content,created from net._http_response order by created desc limit 10;
 select state,count(*) from private.automation_jobs group by state;
 select kind,state,attempts,last_error,created_at,completed_at,failed_at from private.automation_jobs order by created_at desc limit 20;
 

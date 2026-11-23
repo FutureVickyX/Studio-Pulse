@@ -24,7 +24,9 @@ not replayed.
 Personal preferences are per workspace: rule toggles, IANA time zone, reminder hour, due-soon
 days (1–14), overdue interval (1–30 days), review/inactivity thresholds (1–30 days), digest hour
 and weekly day, and quiet hours. Initial time zone is explicitly UTC; select your own zone.
-Quiet hours default to 22:00–07:00; equal endpoints disable them. Workspace owners/admins can
+Quiet hours default to 22:00–07:00; equal endpoints disable them. A reminder hour that falls inside
+quiet hours takes effect when quiet hours end (for example 23:00 with quiet hours 22:00–07:00
+plans that day's reminders at 07:00). Workspace owners/admins can
 disable all automation, events, reminders or digests. They cannot edit another person's preferences.
 
 ## Data and authorization
@@ -40,12 +42,18 @@ Apply the existing migrations in order, including Phase 3A's
 3. `20261112120200_automation_scheduler_extensions.sql`: optional hosting extensions and queue
    access restrictions. Portable test databases without these extensions skip them; no job is
    activated until the explicit installer runs.
+4. `20261119090000_automation_hardening.sql` (Phase 3C): canonical preference storage (integer
+   settings as integers, tz-database zone spelling, read defensively), per-membership isolation in
+   the planner, reminders inside quiet hours, retirement of pending calendar jobs after a time-zone
+   change, requeue-safe claiming, and a privacy-preserving outcome report. Functions only.
 
 RLS requires both the addressed user and active workspace membership to read notifications.
 Authenticated clients can update only `read_at`. They cannot insert or delete system notices,
 change a recipient, read jobs/keys, or execute worker operations. Preferences are owner-only.
 Workspace rule writes and the safe outcome report require owner/admin authorization. The latter
-includes job type/state/attempts/times/error code, with no recipient, title or private payload.
+includes job type, state, attempts, creation day, failure time and error code, with no recipient,
+title or private payload. Preference skips read as completed, quiet-hours deferrals as pending, and
+no next-eligible or completion time is returned, so it does not reveal members' opt-outs or quiet hours (migration 14).
 Private tables have RLS and no client privileges. Existing task, note and reporting policies are
 unchanged. Personal notes are never read by automation.
 
@@ -70,6 +78,7 @@ apply these operations to unrelated projects. Migration deployment uses the exis
 npm ci
 npm run typecheck
 npm run build:automation
+npm run check:secrets -- supabase/functions/automation-worker
 supabase functions deploy --help
 supabase functions deploy automation-worker --project-ref rbvuqdyktfiaxcunioyv --no-verify-jwt
 ```
@@ -77,8 +86,22 @@ supabase functions deploy automation-worker --project-ref rbvuqdyktfiaxcunioyv -
 The build emits `supabase/functions/automation-worker/index.ts` from `server/automation` and
 the existing Phase 3A modules. It bundles dependencies, embeds no configuration values, and
 fails on unresolved imports. The generated file is ignored and must be built before deploying.
-`supabase/config.toml` also records the handler's authentication mode. The connector can deploy
-this same generated file with `verify_jwt: false`.
+`supabase/config.toml` also records the handler's authentication mode.
+
+Without the CLI, deploy through the Supabase connector, which takes the source inline. Build the
+connector variant instead:
+
+```powershell
+npm run build:automation -- --connector
+npm run check:secrets -- supabase/functions/automation-worker
+```
+
+It writes the same ignored file, unminified, with only this repository's code (about 58 KB instead of
+about 330 KB). `@supabase/supabase-js` and `zod`, including any subpath, stay as `npm:` imports pinned
+to the exact installed versions, which the Edge runtime resolves at deploy time. The build fails if the
+output imports anything else. Deploy it as `automation-worker` with entrypoint `index.ts` and `verify_jwt: false`. Then read
+the function back and compare it byte for byte with the local file, and check the next cron response
+(below). Rebuild without `--connector` before a CLI deploy.
 
 In the project's trusted SQL editor, set only the public project URL in Vault (once):
 
@@ -108,7 +131,9 @@ as privileged. The service-role key never enters the cron command or HTTP queue.
 Run [verify-scheduler.sql](../supabase/automation/verify-scheduler.sql). Confirm all of:
 
 1. The named cron job is active and has a successful scheduled run.
-2. Its HTTP response is 200. Cron success alone only proves the HTTP request was queued.
+2. Its HTTP response is 200 with `"failed":0` in the counts. Cron success alone only proves the
+   HTTP request was queued. A 503 with `planning_failed` means planning failed but already-queued
+   jobs were still delivered; check the Postgres log for the SQLSTATE and the job states query.
 3. An authorized test member receives exactly one notice when another member assigns a task.
 4. A repeat worker run leaves the same notification ID and no duplicate record.
 5. Another member and a nonmember cannot read the recipient's notice through the Data API.
@@ -139,21 +164,47 @@ Five failed execution attempts are allowed, with exponential delays starting at 
 After the fifth, the job is terminal `failed`; there is no unbounded retry loop. Safe failure
 codes are stored instead of exception messages. Quiet-hour postponement does not consume a
 failure attempt. Authorized SQL tooling can inspect attempt logs and deliberately requeue a
-failed job after fixing its cause; the client offers no privileged replay endpoint.
+failed job after fixing its cause; the client offers no privileged replay endpoint. The supported
+requeue statement (run as the database operator; the attempt log is kept and attempt numbers
+restart from 1):
+
+```sql
+update private.automation_jobs
+   set state='retry', attempts=0, failed_at=null, last_error=null, run_after=now(),
+       claim_token=null, lease_until=null
+ where id = '<job id>' and state = 'failed';
+```
+
+A row set back to `retry` without resetting `attempts` is ignored by claiming rather than
+blocking other jobs.
+
+The planner isolates each membership: if one member's schedule cannot be planned, that schedule is
+retried an hour later (the Postgres log records only the SQLSTATE) and every other member is
+still planned. If the planning call itself fails, the worker still claims and delivers queued
+jobs, then answers 503 `planning_failed` with its counts. Each run writes one log line with
+counts only. A delivery that committed but lost its response is counted as delivered.
 
 Every delivery rechecks membership, preferences, workspace switches, current task/project
 state and relevant task generation. Reassignment, rescheduling, completion, archive or removed
-membership invalidate stale work. Date-only due dates use the recipient's local calendar,
+membership invalidate stale work. Changing your time zone retires your pending calendar jobs from
+the old zone, and the next planner pass plans them again in the new zone. Date-only due dates use the recipient's local calendar,
 including DST. Overdue intervals are calendar days since the first overdue day. The planner
 scans at most 100 memberships per invocation and 1,000 tasks per member with continuation
 cursors. Normal rescans are 15 minutes apart; large task sets continue on the next minute.
 The worker claims at most ten jobs per call. Delivery time is approximate under backlog.
 
 Daily digests cover the **previous complete local day**; weekly digests cover the previous seven
-complete local days. Current task progress is labelled as a generation-time snapshot. The
+complete local days. Current task progress is labelled as a generation-time snapshot. "Your tasks
+completed in period (still done)" counts tasks assigned to you that were completed in the period
+and are still done when the summary is generated: a task archived, reopened or reassigned before
+then is not counted. "Your tasks by project" counts only your assigned tasks, not the project's.
+"Unattributed active time" is time with no project and no task, as in Analytics. The
 server reads only the claimed recipient's tasks and time in that workspace and uses Phase 3A's
 `summarizeReport` and task/project builders. Active wins overlapping idle; interval precedence,
-calendar clipping and totals match Analytics. Foreground, active and idle are labelled separately.
+calendar clipping and totals match Analytics for the same day boundaries. The worker computes day
+boundaries with the Edge runtime's time zone data while Analytics uses Postgres's, so in a zone
+whose rules the two disagree on (see [analytics.md](analytics.md)) a summary's day edges, and so
+its figures, can differ from Analytics. The hosted equality check ran in UTC. Foreground, active and idle are labelled separately.
 There are no billable/manual measurements invented. Overdue/upcoming tasks are capped at 20 and
 project progress at 100; time input is never silently truncated (over 100,000 rows fails visibly).
 Late offline uploads are reflected in subsequent reports, not retroactively rewritten digests.
@@ -172,7 +223,11 @@ There is no general automation builder, mention parsing, external delivery, miss
 employee ranking or productivity score. Paused/unavailable Supabase hosting cannot execute jobs;
 leases recover interrupted processing after the service returns. Completed job/notification
 retention is currently operator-managed; retain occurrence tombstones when pruning so replay
-cannot recreate an already-delivered occurrence.
+cannot recreate an already-delivered occurrence. Nothing prunes automatically: notifications,
+`private.automation_jobs`/`automation_attempts` and pg_cron's `cron.job_run_details` (about
+1,440 rows a day for the minutely job) all grow until an operator removes old rows. Delivered
+notices keep the task title and project name from delivery time, even after a rename or delete,
+and recipients cannot delete individual notices yet.
 
 ## Local checks
 
@@ -180,6 +235,7 @@ cannot recreate an already-delivered occurrence.
 npm run typecheck
 npx vitest run --maxWorkers=2
 npm run build:automation
+npm run check:secrets -- supabase/functions/automation-worker
 npm run build:web
 npm run check:secrets:web
 ```
