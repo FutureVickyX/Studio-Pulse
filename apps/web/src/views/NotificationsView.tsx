@@ -91,10 +91,10 @@ export function NotificationsView(){
       })}
     </ol>
     {(older.length===0?feed.data?.hasMore:more)?<Button pending={action.pending} onClick={()=>void loadMore()}>Load older notifications</Button>:null}
-    {/* A modal dialog moves focus in, and closing it returns focus to the 'Read summary' button. */}
-    {selected?<Dialog open onClose={()=>setSelected(null)} title={NOTICE_LABELS[selected.kind]} size="lg">
-      <DigestBody item={selected} onOpenTask={id=>{setSelected(null);nav.openTask(id);}}/>
-    </Dialog>:null}
+    {/* Keep the element mounted so the native close restores focus to Read summary. */}
+    <Dialog open={selected !== null} onClose={() => setSelected(null)} title={selected ? NOTICE_LABELS[selected.kind] : 'Summary'} size="lg">
+      {selected ? <DigestBody item={selected} onOpenTask={id => { setSelected(null); nav.openTask(id); }} /> : null}
+    </Dialog>
   </div>;
 }
 
