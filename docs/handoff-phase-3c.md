@@ -463,16 +463,19 @@ is broken on this machine; see §5.4.**
     straight after `SUBSCRIBED`.
   - The test now uses `wait` (§3). The same gap in the web client is H7.
 
+**Browser follow-up (24 November).** An isolated Chrome session signed into a disposable owner
+account against `studio-pulse-dev`. The build came from merged `main` at `7f311cc` with the
+digest focus fix. The 390 px bell displayed its unread badge and opened the inbox. After
+"Load older", Realtime delivered one new notice while all 56 earlier notices stayed in order.
+At 1280 px, the weekly digest opened as a modal and Escape returned focus to "Read summary".
+On the unpatched build, Escape returned focus to the document body because the dialog was
+unmounted before its native close. The populated outcomes table and accessible field errors
+for an out-of-range number and an invalid time zone also passed. The browser fixture account,
+workspace, notices and jobs were removed and verified absent. The web build and secret scan
+passed.
+
 **Not executed here (manual or environment-bound):**
 
-- The rest of the signed-in browser checks. The 23 November session covered the web-ui#0 rule saves
-  (insert, then update), the notice list, "Load older" and marking notices read, at an unrecorded
-  width. Not covered:
-  - the bell and unread badge at 390 px (web-ui#7), and any check at a known 1280 px width;
-  - the digest dialog (web-ui#1): no digest notice existed;
-  - the outcomes table with rows (web-ui#8): no jobs existed;
-  - the field-level validation errors;
-  - a new notice arriving after "Load older" (web-ui#4): none arrived.
 - A cold-tenant check of the web client's Realtime channels (H7).
 - Tauri release and NSIS installer build. The Rust tree and desktop code are unchanged since 3B, which
   recorded it.
